@@ -1,0 +1,6 @@
+{
+  "name": "NEXUS Command Centre",
+  "description": "The personal command centre and externalized brain for realmspace and Floats XR. A dense, dark, multi-agent cockpit.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
