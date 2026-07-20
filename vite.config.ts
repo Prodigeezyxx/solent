@@ -7,4 +7,7 @@ export default defineConfig({
     hmr: process.env.DISABLE_HMR !== 'true',
     watch: process.env.DISABLE_HMR === 'true' ? null : {},
   },
+  preview: {
+    allowedHosts: ['.sandbox.novita.ai'],
+  },
 });
