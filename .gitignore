@@ -33,3 +33,8 @@ pids/
 *.bak
 *.tar.gz
 *.zip
+
+# Cloudflare Worker local secrets (contains API keys — never commit)
+worker/.dev.vars
+worker/.wrangler/
+worker/dev.vars

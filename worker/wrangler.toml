@@ -1,0 +1,19 @@
+name = "nexus-worker"
+main = "src/index.ts"
+compatibility_date = "2024-11-06"
+compatibility_flags = ["nodejs_compat"]
+
+# D1 database binding (created via: wrangler d1 create nexus-db)
+[[d1_databases]]
+binding = "DB"
+database_name = "nexus-db"
+database_id = "REPLACE_WITH_YOUR_D1_ID"
+migrations_dir = "migrations"
+
+# Secrets (set via: wrangler secret put OPENROUTER_API_KEY)
+# OPENROUTER_API_KEY  - your OpenRouter key
+# OPENROUTER_MODEL    - optional, e.g. anthropic/claude-3.5-sonnet
+# APP_URL             - optional, your deployment URL
+
+[vars]
+OPENROUTER_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
