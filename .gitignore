@@ -1,8 +1,35 @@
+# Dependencies
 node_modules/
-build/
+
+# Build output
 dist/
 coverage/
-.DS_Store
-*.log
-.env*
+
+# Local environment and secrets
+.env
+.env.*
 !.env.example
+.dev.vars
+
+# Wrangler / Cloudflare local state
+.wrangler/
+
+# Logs and runtime files
+*.log
+*.pid
+*.pid.lock
+logs/
+pids/
+.pm2/
+
+# Editor and OS files
+.DS_Store
+.vscode/
+.idea/
+*.swp
+
+# Archives and backups
+*.backup
+*.bak
+*.tar.gz
+*.zip

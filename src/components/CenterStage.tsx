@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, type FormEvent } from 'react';
 import { motion } from 'motion/react';
 import { Mic, Terminal, ChevronRight, Hash, Send } from 'lucide-react';
 import { Mode, Message } from '../types';
@@ -27,7 +27,7 @@ export default function CenterStage({ mode }: CenterStageProps) {
     scrollToBottom();
   }, [messages]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
 
