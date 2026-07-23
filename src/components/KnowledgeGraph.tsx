@@ -1,0 +1,354 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { GitBranch, Loader2, RefreshCw, X } from 'lucide-react';
+import { fetchGraph, type GraphData, type GraphNode, type GraphNodeType } from '../lib/api';
+
+/**
+ * Knowledge graph panel — force-directed relationship tree over everything
+ * NEXUS knows: sources → people → messages → derived priorities, signals,
+ * drafts, memories and decisions. Pure client-side physics, zero credits.
+ */
+
+interface SimNode extends GraphNode {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  fixed?: boolean;
+}
+
+const TYPE_STYLE: Record<GraphNodeType, { color: string; label: string }> = {
+  hub: { color: '#e5e7eb', label: 'Hub' },
+  source: { color: '#7CFFB2', label: 'Sources' },
+  person: { color: '#fb923c', label: 'People' },
+  message: { color: '#64748b', label: 'Messages' },
+  task: { color: '#38bdf8', label: 'Priorities' },
+  signal: { color: '#a78bfa', label: 'Signals' },
+  draft: { color: '#f472b6', label: 'Drafts' },
+  memory: { color: '#fbbf24', label: 'Memories' },
+  decision: { color: '#c084fc', label: 'Decisions' },
+};
+
+const EDGE_LABEL: Record<string, string> = {
+  has: 'has', sent: 'sent', in: 'in', derived: 'derived from', about: 'about', logged: 'logged',
+};
+
+function radius(n: GraphNode): number {
+  return 6 + Math.min(n.weight, 10) * 2.2;
+}
+
+export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrief: () => void; briefRunning: boolean }) {
+  const [graph, setGraph] = useState<GraphData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<SimNode | null>(null);
+  const [hovered, setHovered] = useState<string | null>(null);
+  const [hiddenTypes, setHiddenTypes] = useState<Set<GraphNodeType>>(new Set());
+  const [view, setView] = useState({ x: 0, y: 0, k: 1 });
+
+  const svgRef = useRef<SVGSVGElement>(null);
+  const simRef = useRef<SimNode[]>([]);
+  const [, force] = useState(0); // re-render ticker
+  const dragRef = useRef<{ id: string | null; panning: boolean; lastX: number; lastY: number }>({ id: null, panning: false, lastX: 0, lastY: 0 });
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const g = await fetchGraph();
+      setGraph(g);
+      // Seed positions: hub centre, sources ring, rest scattered by type angle.
+      const W = 900, H = 600;
+      simRef.current = g.nodes.map((n, i) => {
+        const angle = (i / Math.max(g.nodes.length, 1)) * Math.PI * 2;
+        const dist = n.type === 'hub' ? 0 : n.type === 'source' ? 120 : 220 + (i % 5) * 30;
+        return { ...n, x: W / 2 + Math.cos(angle) * dist, y: H / 2 + Math.sin(angle) * dist, vx: 0, vy: 0, fixed: n.type === 'hub' };
+      });
+      const hub = simRef.current.find((n) => n.type === 'hub');
+      if (hub) { hub.x = W / 2; hub.y = H / 2; }
+    } catch {
+      setGraph(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const adjacency = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const e of graph?.edges ?? []) {
+      if (!map.has(e.from)) map.set(e.from, new Set());
+      if (!map.has(e.to)) map.set(e.to, new Set());
+      map.get(e.from)!.add(e.to);
+      map.get(e.to)!.add(e.from);
+    }
+    return map;
+  }, [graph]);
+
+  // ---- Force simulation ----------------------------------------------------
+  useEffect(() => {
+    if (!graph || graph.empty) return;
+    let frame = 0;
+    let running = true;
+    const edges = graph.edges;
+    const tick = () => {
+      if (!running) return;
+      const nodes = simRef.current;
+      const byId = new Map(nodes.map((n) => [n.id, n]));
+      // Repulsion (O(n²) is fine at ≤~90 nodes)
+      for (let i = 0; i < nodes.length; i++) {
+        for (let j = i + 1; j < nodes.length; j++) {
+          const a = nodes[i], b = nodes[j];
+          let dx = a.x - b.x, dy = a.y - b.y;
+          let d2 = dx * dx + dy * dy;
+          if (d2 < 1) { dx = Math.random() - 0.5; dy = Math.random() - 0.5; d2 = 1; }
+          const f = 1600 / d2;
+          const d = Math.sqrt(d2);
+          const fx = (dx / d) * f, fy = (dy / d) * f;
+          if (!a.fixed) { a.vx += fx; a.vy += fy; }
+          if (!b.fixed) { b.vx -= fx; b.vy -= fy; }
+        }
+      }
+      // Spring attraction along edges
+      for (const e of edges) {
+        const a = byId.get(e.from), b = byId.get(e.to);
+        if (!a || !b) continue;
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const d = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
+        const target = a.type === 'hub' || b.type === 'hub' ? 150 : 90;
+        const f = (d - target) * 0.012;
+        const fx = (dx / d) * f, fy = (dy / d) * f;
+        if (!a.fixed) { a.vx += fx; a.vy += fy; }
+        if (!b.fixed) { b.vx -= fx; b.vy -= fy; }
+      }
+      // Gentle centring + integrate
+      for (const n of nodes) {
+        if (n.fixed || dragRef.current.id === n.id) { n.vx = 0; n.vy = 0; continue; }
+        n.vx += (450 - n.x) * 0.0006;
+        n.vy += (300 - n.y) * 0.0006;
+        n.vx *= 0.85; n.vy *= 0.85;
+        n.x += n.vx; n.y += n.vy;
+      }
+      force((v) => v + 1);
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    const stop = setTimeout(() => { running = false; cancelAnimationFrame(frame); }, 8000); // settle then stop burning CPU
+    return () => { running = false; cancelAnimationFrame(frame); clearTimeout(stop); };
+  }, [graph]);
+
+  // ---- Interaction ----------------------------------------------------------
+  const toWorld = (clientX: number, clientY: number) => {
+    const rect = svgRef.current!.getBoundingClientRect();
+    const px = ((clientX - rect.left) / rect.width) * 900;
+    const py = ((clientY - rect.top) / rect.height) * 600;
+    return { x: (px - view.x) / view.k, y: (py - view.y) / view.k };
+  };
+
+  const onPointerDown = (e: React.PointerEvent, node?: SimNode) => {
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    if (node) {
+      dragRef.current = { id: node.id, panning: false, lastX: e.clientX, lastY: e.clientY };
+    } else {
+      dragRef.current = { id: null, panning: true, lastX: e.clientX, lastY: e.clientY };
+    }
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    const d = dragRef.current;
+    if (d.id) {
+      const p = toWorld(e.clientX, e.clientY);
+      const n = simRef.current.find((x) => x.id === d.id);
+      if (n) { n.x = p.x; n.y = p.y; force((v) => v + 1); }
+    } else if (d.panning) {
+      const rect = svgRef.current!.getBoundingClientRect();
+      setView((v) => ({ ...v, x: v.x + ((e.clientX - d.lastX) / rect.width) * 900, y: v.y + ((e.clientY - d.lastY) / rect.height) * 600 }));
+      dragRef.current = { ...d, lastX: e.clientX, lastY: e.clientY };
+    }
+  };
+
+  const onPointerUp = () => { dragRef.current = { id: null, panning: false, lastX: 0, lastY: 0 }; };
+
+  const onWheel = (e: React.WheelEvent) => {
+    const factor = e.deltaY < 0 ? 1.12 : 0.89;
+    setView((v) => {
+      const k = Math.min(Math.max(v.k * factor, 0.35), 3.5);
+      const rect = svgRef.current!.getBoundingClientRect();
+      const px = ((e.clientX - rect.left) / rect.width) * 900;
+      const py = ((e.clientY - rect.top) / rect.height) * 600;
+      return { k, x: px - ((px - v.x) / v.k) * k, y: py - ((py - v.y) / v.k) * k };
+    });
+  };
+
+  const toggleType = (t: GraphNodeType) => {
+    setHiddenTypes((prev) => {
+      const next = new Set(prev);
+      if (next.has(t)) next.delete(t); else next.add(t);
+      return next;
+    });
+  };
+
+  const visible = simRef.current.filter((n) => !hiddenTypes.has(n.type));
+  const visibleIds = new Set(visible.map((n) => n.id));
+  const visibleEdges = (graph?.edges ?? []).filter((e) => visibleIds.has(e.from) && visibleIds.has(e.to));
+  const focusSet = hovered ? new Set([hovered, ...(adjacency.get(hovered) ?? [])]) : null;
+
+  const typeCounts = useMemo(() => {
+    const counts = new Map<GraphNodeType, number>();
+    for (const n of graph?.nodes ?? []) counts.set(n.type, (counts.get(n.type) ?? 0) + 1);
+    return counts;
+  }, [graph]);
+
+  return (
+    <div className="h-full flex flex-col relative">
+      <div className="flex items-center justify-between gap-3 px-6 pt-6 pb-3 flex-wrap">
+        <div>
+          <p className="text-nexus-dim font-mono text-[10px] tracking-widest mb-1 flex items-center gap-1.5"><GitBranch className="w-3.5 h-3.5" /> KNOWLEDGE GRAPH</p>
+          <h1 className="text-xl font-semibold tracking-tight text-nexus-text">How everything connects.</h1>
+        </div>
+        <button
+          onClick={load}
+          className="flex items-center gap-1.5 px-3 h-8 rounded-md border border-nexus-border text-nexus-dim text-xs hover:text-nexus-mint hover:border-nexus-mint/40 transition-colors"
+        >
+          <RefreshCw className="w-3.5 h-3.5" /> Rebuild graph
+        </button>
+      </div>
+
+      {/* Type filter legend */}
+      <div className="flex items-center gap-1.5 px-6 pb-3 flex-wrap">
+        {(Object.keys(TYPE_STYLE) as GraphNodeType[]).filter((t) => t !== 'hub' && (typeCounts.get(t) ?? 0) > 0).map((t) => (
+          <button
+            key={t}
+            onClick={() => toggleType(t)}
+            className={`flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-wider rounded-full border px-2 py-0.5 transition-opacity ${hiddenTypes.has(t) ? 'opacity-35 border-nexus-border text-nexus-dim' : 'border-nexus-border text-zinc-300'}`}
+          >
+            <i className="w-2 h-2 rounded-full" style={{ backgroundColor: TYPE_STYLE[t].color }} />
+            {TYPE_STYLE[t].label}
+            <span className="text-nexus-dim">{typeCounts.get(t)}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 min-h-0 mx-6 mb-6 rounded-xl border border-nexus-border bg-nexus-surface/60 relative overflow-hidden">
+        {loading && (
+          <div className="absolute inset-0 grid place-items-center z-10">
+            <Loader2 className="w-6 h-6 text-nexus-mint animate-spin" />
+          </div>
+        )}
+
+        {!loading && (!graph || graph.empty) && (
+          <div className="absolute inset-0 grid place-items-center z-10 p-8">
+            <div className="text-center max-w-sm">
+              <GitBranch className="w-8 h-8 text-nexus-dim mx-auto mb-3" />
+              <p className="text-nexus-muted text-sm mb-1">The graph is empty.</p>
+              <p className="text-nexus-dim text-xs mb-4">Run the one-shot brief — sources, people, messages, priorities, and signals will appear here as a living relationship tree.</p>
+              <button
+                onClick={onRunBrief}
+                disabled={briefRunning}
+                className="inline-flex items-center gap-1.5 px-3 h-8 rounded-md bg-nexus-mint text-nexus-bg text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
+              >
+                {briefRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Run brief
+              </button>
+            </div>
+          </div>
+        )}
+
+        <svg
+          ref={svgRef}
+          viewBox="0 0 900 600"
+          className="w-full h-full cursor-grab active:cursor-grabbing touch-none select-none"
+          onPointerDown={(e) => onPointerDown(e)}
+          onPointerMove={onPointerMove}
+          onPointerUp={onPointerUp}
+          onWheel={onWheel}
+          role="img"
+          aria-label="Knowledge graph of sources, people, messages, and derived work"
+        >
+          <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
+            {visibleEdges.map((e, i) => {
+              const a = simRef.current.find((n) => n.id === e.from);
+              const b = simRef.current.find((n) => n.id === e.to);
+              if (!a || !b) return null;
+              const dim = focusSet && !(focusSet.has(e.from) && focusSet.has(e.to));
+              return (
+                <line
+                  key={i}
+                  x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+                  stroke={e.kind === 'derived' ? '#7CFFB2' : e.kind === 'about' ? '#f472b6' : '#334155'}
+                  strokeOpacity={dim ? 0.08 : e.kind === 'derived' ? 0.5 : 0.35}
+                  strokeWidth={e.kind === 'derived' ? 1.4 : 1}
+                  strokeDasharray={e.kind === 'about' ? '3 3' : undefined}
+                />
+              );
+            })}
+            {visible.map((n) => {
+              const style = TYPE_STYLE[n.type];
+              const r = radius(n);
+              const dim = focusSet && !focusSet.has(n.id);
+              const isSel = selected?.id === n.id;
+              return (
+                <g
+                  key={n.id}
+                  transform={`translate(${n.x},${n.y})`}
+                  opacity={dim ? 0.2 : 1}
+                  className="cursor-pointer"
+                  onPointerDown={(e) => { e.stopPropagation(); onPointerDown(e, n); }}
+                  onPointerEnter={() => setHovered(n.id)}
+                  onPointerLeave={() => setHovered(null)}
+                  onClick={() => setSelected(n)}
+                >
+                  {(isSel || n.type === 'hub') && <circle r={r + 5} fill="none" stroke={style.color} strokeOpacity={0.4} strokeWidth={1.5} />}
+                  <circle r={r} fill={style.color} fillOpacity={n.type === 'message' ? 0.35 : 0.22} stroke={style.color} strokeWidth={1.4} />
+                  {n.type !== 'message' && (
+                    <text
+                      y={r + 11}
+                      textAnchor="middle"
+                      fill={dim ? '#475569' : '#cbd5e1'}
+                      fontSize={n.type === 'hub' ? 11 : 8.5}
+                      fontFamily="ui-monospace, monospace"
+                    >
+                      {n.label.length > 26 ? `${n.label.slice(0, 25)}…` : n.label}
+                    </text>
+                  )}
+                </g>
+              );
+            })}
+          </g>
+        </svg>
+
+        {/* Detail card */}
+        {selected && (
+          <div className="absolute right-3 top-3 w-64 rounded-lg border border-nexus-border bg-nexus-surface/95 backdrop-blur shadow-2xl p-3 z-20">
+            <div className="flex items-start justify-between gap-2 mb-1.5">
+              <span className="flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-wider" style={{ color: TYPE_STYLE[selected.type].color }}>
+                <i className="w-2 h-2 rounded-full" style={{ backgroundColor: TYPE_STYLE[selected.type].color }} />
+                {selected.type}
+              </span>
+              <button onClick={() => setSelected(null)} className="text-nexus-dim hover:text-nexus-text" aria-label="Close detail">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <h3 className="text-xs font-semibold text-zinc-200 leading-snug mb-1">{selected.label}</h3>
+            {selected.detail && <p className="text-[10px] text-nexus-muted leading-relaxed mb-2">{selected.detail}</p>}
+            <div className="border-t border-nexus-border/50 pt-2">
+              <span className="block text-[9px] font-mono uppercase tracking-wider text-nexus-dim mb-1">Connections</span>
+              {[...(adjacency.get(selected.id) ?? [])].slice(0, 6).map((id) => {
+                const n = simRef.current.find((x) => x.id === id);
+                if (!n) return null;
+                const edge = graph?.edges.find((e) => (e.from === selected.id && e.to === id) || (e.to === selected.id && e.from === id));
+                return (
+                  <button key={id} onClick={() => setSelected(n)} className="w-full flex items-center gap-1.5 py-0.5 text-left group">
+                    <i className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: TYPE_STYLE[n.type].color }} />
+                    <span className="text-[10px] text-zinc-400 group-hover:text-nexus-mint truncate transition-colors">{n.label}</span>
+                    <span className="ml-auto text-[8px] font-mono text-nexus-dim shrink-0">{EDGE_LABEL[edge?.kind ?? 'has']}</span>
+                  </button>
+                );
+              })}
+              {(adjacency.get(selected.id)?.size ?? 0) === 0 && <p className="text-[10px] text-nexus-dim">No connections.</p>}
+            </div>
+          </div>
+        )}
+
+        <span className="absolute left-3 bottom-2.5 text-[9px] font-mono text-nexus-dim z-10">drag nodes · scroll to zoom · drag canvas to pan</span>
+      </div>
+    </div>
+  );
+}

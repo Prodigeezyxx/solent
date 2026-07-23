@@ -122,6 +122,39 @@ export async function runBriefNow(): Promise<Brief> {
   return (await res.json()) as Brief;
 }
 
+// ---- Knowledge graph -------------------------------------------------------
+
+export type GraphNodeType =
+  | 'hub' | 'source' | 'person' | 'message' | 'task' | 'signal' | 'draft' | 'memory' | 'decision';
+
+export interface GraphNode {
+  id: string;
+  type: GraphNodeType;
+  label: string;
+  detail?: string;
+  weight: number;
+}
+
+export interface GraphEdge {
+  from: string;
+  to: string;
+  kind: 'has' | 'sent' | 'in' | 'derived' | 'about' | 'logged';
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  generated_at: number;
+  empty: boolean;
+}
+
+/** Pure D1 read — zero credits. */
+export async function fetchGraph(): Promise<GraphData> {
+  const res = await fetch('/api/graph');
+  if (!res.ok) throw new Error(`graph failed (${res.status})`);
+  return (await res.json()) as GraphData;
+}
+
 // ---- Settings / sources ---------------------------------------------------
 
 export type SettingsStatus = Record<string, string | boolean>;

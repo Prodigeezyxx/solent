@@ -12,7 +12,7 @@ export interface Agent {
   status: AgentStatus;
 }
 
-export type Mode = 'COMMAND' | 'FOCUS' | 'RECEIVE' | 'DEEP' | 'PERFORMANCE';
+export type Mode = 'COMMAND' | 'FOCUS' | 'RECEIVE' | 'GRAPH' | 'DEEP' | 'PERFORMANCE';
 
 export interface Message {
   id: string;

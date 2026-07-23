@@ -20,6 +20,8 @@ NEXUS is your **second executive-function layer**: it connects your real work so
 - **Unified RECEIVE inbox** — all three sources merged, filterable, with per-item "reply →" handoff to CONDUCTOR
 - **HERMES reply drafts** — the brief proposes ≤3 replies for messages awaiting you; refine them in the chat thread
 - **Live dashboard** — headline, executive summary, source health chips, real task queue from D1
+- **Knowledge graph (GRAPH mode)** — interactive force-directed relationship tree: NEXUS → sources → people → messages → derived priorities, signals, drafts, logged notes and decisions. Drag nodes, zoom/pan, filter by type, click for a detail card with connections. Built from D1 with zero LLM cost (`GET /api/graph`)
+- **Fresh console** — zero seeded/mock data; every panel starts empty and fills only from your real sources
 - **CONDUCTOR chat** (DEEP mode) — tool-calling orchestrator (capture task / complete / memory / decision) with cached-brief context
 - Single-process serving: the Cloudflare Worker serves both the API and the built React app
 
@@ -30,6 +32,7 @@ NEXUS is your **second executive-function layer**: it connects your real work so
 | `/` | Dashboard (COMMAND), unified inbox (RECEIVE), chat (DEEP), focus, performance |
 | `GET /api/health` | Service health |
 | `GET /api/brief` | Cached brief (zero-credit read path) |
+| `GET /api/graph` | Knowledge graph nodes + edges (zero-credit) |
 | `POST /api/brief?force=1` | Run the one-shot pass now (one model call) |
 | `GET/POST /api/settings` | Connector credentials (secrets write-only, never echoed) |
 | `GET /api/state` | Tasks + memories snapshot |

@@ -4,6 +4,7 @@ import { orchestrate } from './orchestrator';
 import { listTasks, toggleTask, createTask } from './db';
 import { recentMemories } from './db';
 import { runBrief } from './brief';
+import { buildGraph } from './graph';
 import { loadSettings, saveSettings, settingsStatus } from './settings';
 
 const app = new Hono<{ Bindings: Env }>();
@@ -23,6 +24,13 @@ app.get('/api/brief', async (c) => {
   // Read path never spends credits unless the cache is cold AND sources have items.
   const brief = await runBrief(c.env, { force: false });
   return c.json(brief);
+});
+
+// ---- KNOWLEDGE GRAPH ----------------------------------------------------
+// Relationship tree over everything the system knows. Pure D1 reads — free.
+app.get('/api/graph', async (c) => {
+  const graph = await buildGraph(c.env.DB);
+  return c.json(graph);
 });
 
 // ---- SETTINGS / SOURCES -------------------------------------------------

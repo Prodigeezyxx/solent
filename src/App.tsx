@@ -19,6 +19,7 @@ const MODE_VIEWS: Record<Mode, string> = {
   COMMAND: 'Command centre',
   FOCUS: 'Focus protocol',
   RECEIVE: 'Inbox & signals',
+  GRAPH: 'Knowledge graph',
   DEEP: 'CONDUCTOR thread',
   PERFORMANCE: 'Performance',
 };
@@ -38,7 +39,7 @@ function App() {
     {
       id: '1',
       sender: 'CONDUCTOR',
-      content: 'Good morning, Iyobosa. I am CONDUCTOR, online and orchestrating the council. Ask me to capture a task, log a decision, or brief the day.',
+      content: 'CONDUCTOR online. Connect your sources, then ask me to run the brief, capture a task, or log a decision.',
       timestamp: new Date(),
     },
   ]);
@@ -155,7 +156,7 @@ function App() {
     setPaletteOpen(false);
     if (action === 'focus') setMode('FOCUS');
     else if (action === 'capture') setToast('Capture ready — type in the command bar');
-    else if (action === 'person') setToast('Opening network graph search');
+    else if (action === 'graph' || action === 'person') setMode('GRAPH');
     else if (action === 'comms') setToast('HERMES is drafting your message');
     else if (action === 'judge') setToast('JUDGE decision journal opened');
     else if (action === 'sources') setSourcesOpen(true);
@@ -191,7 +192,7 @@ function App() {
           />
         </main>
 
-        <RightRail agent={selectedAgentData} open={contextOpen} onClose={() => setContextOpen(false)} />
+        <RightRail agent={selectedAgentData} open={contextOpen} onClose={() => setContextOpen(false)} brief={brief} />
       </div>
 
       <BottomBar onOpenCmd={() => setPaletteOpen(true)} prioritiesDone={completed} prioritiesTotal={tasks.length} />

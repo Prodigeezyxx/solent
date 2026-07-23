@@ -20,6 +20,7 @@ interface CommandPaletteProps {
 const ITEMS: CommandItem[] = [
   { id: 'capture', label: 'Capture Task', hint: 'Route to ATLAS for scheduling', icon: <CheckCircle2 className="w-4 h-4" />, color: '#b9f6ca', action: 'capture' },
   { id: 'focus', label: 'Focus Mode', hint: 'ATLAS: Block next 2 hours', icon: <Calendar className="w-4 h-4" />, color: '#7CFFB2', action: 'focus' },
+  { id: 'graph', label: 'Knowledge Graph', hint: 'See how sources, people, and work connect', icon: <Search className="w-4 h-4" />, color: '#38bdf8', action: 'graph' },
   { id: 'person', label: 'Find Person', hint: 'HUNTER / CIRCLE: Search network graph', icon: <User className="w-4 h-4" />, color: '#fb923c', action: 'person' },
   { id: 'comms', label: 'Draft Comms', hint: 'HERMES: Generate an email or message', icon: <FileText className="w-4 h-4" />, color: '#a78bfa', action: 'comms' },
   { id: 'judge', label: 'Invoke JUDGE', hint: 'Log a new decision or review past decisions', icon: <Bot className="w-4 h-4" />, color: '#c084fc', action: 'judge' },

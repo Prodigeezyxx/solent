@@ -7,7 +7,7 @@ interface TopbarProps {
   onOpenPalette: () => void;
 }
 
-const MODES: Mode[] = ['COMMAND', 'FOCUS', 'RECEIVE', 'DEEP', 'PERFORMANCE'];
+const MODES: Mode[] = ['COMMAND', 'FOCUS', 'RECEIVE', 'GRAPH', 'DEEP', 'PERFORMANCE'];
 
 export default function Topbar({ mode, setMode, onOpenPalette }: TopbarProps) {
   return (

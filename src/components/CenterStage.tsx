@@ -6,8 +6,8 @@ import {
   Sparkles, Inbox, Users, Loader2, Plug, RefreshCw, Mail, MessageSquare, PenLine,
 } from 'lucide-react';
 import type { Mode, Task, Message } from '../types';
-import { SIGNALS, SCHEDULE } from '../data/agents';
 import type { Brief, InboxItem } from '../lib/api';
+import KnowledgeGraph from './KnowledgeGraph';
 
 interface CenterStageProps {
   mode: Mode;
@@ -87,10 +87,13 @@ export default function CenterStage({
             running={focusRunning}
             onToggle={() => setFocusRunning((r) => !r)}
             onReset={() => { setFocusSeconds(FOCUS_SECONDS); setFocusRunning(false); }}
+            target={tasks.find((t) => !t.done)?.title}
           />
         )}
 
         {mode === 'PERFORMANCE' && <PerformanceView completed={completed} tasks={tasks} />}
+
+        {mode === 'GRAPH' && <KnowledgeGraph onRunBrief={onRunBrief} briefRunning={briefRunning} />}
 
         {showChat && (
           <div className="h-full flex flex-col">
@@ -239,13 +242,16 @@ function Dashboard({
   const today = new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase();
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
-  const signals = brief?.signals?.length ? brief.signals : SIGNALS;
+  const signals = brief?.signals ?? [];
+  const connected = brief?.sources?.filter((s) => s.ok).length ?? 0;
+  const inboxCount = brief?.inbox?.length ?? 0;
+  const replyCount = brief?.replies?.length ?? 0;
   return (
     <div className="w-full max-w-5xl mx-auto px-6 md:px-10 py-10">
       <div className="flex items-end justify-between gap-6 mb-4 flex-wrap">
         <div>
           <p className="text-nexus-dim font-mono text-[10px] tracking-widest mb-2">{today}</p>
-          <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-nexus-text">{greeting}, Iyobosa.</h1>
+          <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-nexus-text">{greeting}.</h1>
           <p className="text-nexus-muted text-sm mt-2">
             {brief?.headline
               ? <strong className="text-zinc-300 font-medium">{brief.headline}</strong>
@@ -279,10 +285,10 @@ function Dashboard({
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-px rounded-xl border border-nexus-border bg-nexus-border overflow-hidden mb-4">
-        <Metric icon={<Target className="w-4 h-4" />} color={'nexus-orange' as const} value={`${completed}`} sub="/4" label="Priorities complete" tag="On track" />
-        <Metric icon={<Clock3 className="w-4 h-4" />} color={'nexus-blue' as const} value="4.5" sub="h" label="Focus time protected" tag="2 blocks" />
-        <Metric icon={<Radio className="w-4 h-4" />} color={'nexus-purple' as const} value="7" label="Signals to review" tag="+3 today" />
-        <Metric icon={<Gauge className="w-4 h-4" />} color={'nexus-mint' as const} value="82" sub="%" label="System capacity" tag="Healthy" />
+        <Metric icon={<Target className="w-4 h-4" />} color={'nexus-orange' as const} value={`${completed}`} sub={`/${tasks.length}`} label="Priorities complete" tag={tasks.length ? 'live' : 'empty'} />
+        <Metric icon={<Radio className="w-4 h-4" />} color={'nexus-purple' as const} value={`${inboxCount}`} label="Items in last pass" tag={brief ? 'scanned' : '—'} />
+        <Metric icon={<Clock3 className="w-4 h-4" />} color={'nexus-blue' as const} value={`${replyCount}`} label="Replies drafted" tag={replyCount ? 'awaiting you' : '—'} />
+        <Metric icon={<Gauge className="w-4 h-4" />} color={'nexus-mint' as const} value={`${connected}`} sub="/3" label="Sources connected" tag={connected ? 'online' : 'connect'} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
@@ -295,6 +301,11 @@ function Dashboard({
             <button className="flex items-center gap-1 text-[10px] text-nexus-dim border border-nexus-border rounded px-2 py-1 hover:text-nexus-text transition-colors"><Plus className="w-3.5 h-3.5" /> Add</button>
           </div>
           <div>
+            {tasks.length === 0 && (
+              <div className="px-4 py-8 text-center">
+                <p className="text-nexus-dim text-xs">No priorities yet. Run the brief — real tasks land here from your sources.</p>
+              </div>
+            )}
             {tasks.map((task) => (
               <motion.button
                 layout
@@ -327,15 +338,18 @@ function Dashboard({
                 <span className="flex items-center gap-1.5 text-nexus-dim font-mono text-[10px] tracking-widest"><Activity className="w-3.5 h-3.5" /> LIVE</span>
                 <h2 className="text-nexus-text text-sm font-semibold mt-1">Agent activity</h2>
               </div>
-              <span className="flex items-center gap-1 text-[9px] font-mono text-nexus-mint border border-nexus-mint/20 rounded-full px-1.5 py-0.5"><i className="w-1 h-1 rounded-full bg-nexus-mint animate-pulse" /> 3 working</span>
+              <span className="flex items-center gap-1 text-[9px] font-mono text-nexus-mint border border-nexus-mint/20 rounded-full px-1.5 py-0.5"><i className="w-1 h-1 rounded-full bg-nexus-mint animate-pulse" /> {brief?.sources?.filter((s) => s.ok).length ?? 0} online</span>
             </div>
             <div className="p-2 space-y-1">
-              {SIGNALS.slice(0, 3).map((s, i) => (
-                <button key={s.title} onClick={onToggleContext} className="w-full flex items-center gap-2 px-2 py-2 rounded hover:bg-white/[.02] text-left">
-                  <span className="w-7 h-7 rounded grid place-items-center font-mono text-[9px]" style={{ backgroundColor: `${['#38bdf8', '#fb923c', '#a78bfa'][i]}1a`, color: ['#38bdf8', '#fb923c', '#a78bfa'][i] }}>0{i + 1}</span>
+              {(brief?.sources ?? []).filter((s) => s.configured).length === 0 && (
+                <p className="px-2 py-3 text-[10px] text-nexus-dim text-center">No sources connected — activity appears here once they are.</p>
+              )}
+              {(brief?.sources ?? []).filter((s) => s.configured).map((s, i) => (
+                <button key={s.source} onClick={onToggleContext} className="w-full flex items-center gap-2 px-2 py-2 rounded hover:bg-white/[.02] text-left">
+                  <span className="w-7 h-7 rounded grid place-items-center font-mono text-[9px]" style={{ backgroundColor: `${['#38bdf8', '#fb923c', '#a78bfa'][i % 3]}1a`, color: ['#38bdf8', '#fb923c', '#a78bfa'][i % 3] }}>0{i + 1}</span>
                   <span className="min-w-0">
-                    <strong className="block text-[10px] font-mono text-zinc-300 truncate">{s.label}</strong>
-                    <small className="block text-[9px] text-nexus-dim truncate">{s.title}</small>
+                    <strong className="block text-[10px] font-mono text-zinc-300 truncate uppercase">{s.source}</strong>
+                    <small className="block text-[9px] text-nexus-dim truncate">{s.ok ? `${s.count} items in last pass` : s.error ?? 'no data yet'}</small>
                   </span>
                 </button>
               ))}
@@ -351,6 +365,9 @@ function Dashboard({
               </div>
             </div>
             <div>
+              {signals.length === 0 && (
+                <p className="px-4 py-6 text-[10px] text-nexus-dim text-center">Signals distilled from your sources appear here after a pass.</p>
+              )}
               {signals.map((s, i) => (
                 <button key={s.title} className="w-full flex items-center gap-3 px-4 py-3 border-b border-nexus-border/40 text-left hover:bg-white/[.02] last:border-0">
                   <span className={`w-7 h-7 rounded grid place-items-center font-mono text-[9px] ${['text-nexus-blue bg-nexus-blue/10', 'text-nexus-orange bg-nexus-orange/10', 'text-nexus-purple bg-nexus-purple/10', 'text-nexus-mint bg-nexus-mint/10'][i % 4]}`}>0{i + 1}</span>
@@ -373,23 +390,21 @@ function Dashboard({
       <section className="mt-4 rounded-xl border border-nexus-border bg-nexus-surface/90 overflow-hidden">
         <div className="flex items-center justify-between p-4 border-b border-nexus-border/50">
           <div>
-            <span className="flex items-center gap-1.5 text-nexus-dim font-mono text-[10px] tracking-widest"><CalendarDays className="w-3.5 h-3.5" /> SCHEDULE</span>
-            <h2 className="text-nexus-text text-sm font-semibold mt-1">Coming up</h2>
+            <span className="flex items-center gap-1.5 text-nexus-dim font-mono text-[10px] tracking-widest"><PenLine className="w-3.5 h-3.5" /> DRAFTS</span>
+            <h2 className="text-nexus-text text-sm font-semibold mt-1">Replies awaiting your call</h2>
           </div>
-          <span className="text-[10px] font-mono text-nexus-dim">BST</span>
+          <span className="text-[10px] font-mono text-nexus-dim">{replyCount || '—'}</span>
         </div>
         <div className="p-4">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-[9px] font-mono text-nexus-mint">NOW</span>
-            <span className="h-px flex-1 bg-gradient-to-r from-nexus-mint/50 to-transparent" />
-          </div>
-          {SCHEDULE.map((ev) => (
-            <div key={ev.time} className="flex items-center gap-4 py-2.5">
-              <time className="text-[10px] font-mono text-nexus-dim w-10">{ev.time}</time>
-              <span className={`w-1 h-8 rounded-full ${ev.kind === 'focus' ? 'bg-nexus-mint' : ev.kind === 'meeting' ? 'bg-nexus-blue' : 'bg-nexus-purple'}`} />
+          {replyCount === 0 && (
+            <p className="text-[10px] text-nexus-dim text-center py-2">When a pass finds messages waiting on you, HERMES drafts replies here and in RECEIVE.</p>
+          )}
+          {(brief?.replies ?? []).map((r, i) => (
+            <div key={i} className="flex items-start gap-4 py-2.5 border-b border-nexus-border/30 last:border-0">
+              <span className={`mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-mono ${SOURCE_TONE[r.channel] ?? 'bg-nexus-border text-nexus-dim'}`}>{r.channel}</span>
               <div className="min-w-0">
-                <strong className="block text-[11px] font-medium text-zinc-300">{ev.title}</strong>
-                <small className="block text-[10px] text-nexus-dim truncate">{ev.detail}</small>
+                <strong className="block text-[11px] font-medium text-zinc-300">to {r.to} · re: {r.re}</strong>
+                <small className="block text-[10px] text-nexus-dim truncate">{r.draft}</small>
               </div>
             </div>
           ))}
@@ -532,7 +547,7 @@ function ReceiveView({
   );
 }
 
-function FocusView({ focusTime, running, onToggle, onReset }: { focusTime: string; running: boolean; onToggle: () => void; onReset: () => void }) {
+function FocusView({ focusTime, running, onToggle, onReset, target }: { focusTime: string; running: boolean; onToggle: () => void; onReset: () => void; target?: string }) {
   return (
     <div className="min-h-full flex flex-col items-center justify-center relative p-10 text-center overflow-hidden">
       <div className="absolute inset-[15%_10%] bg-[radial-gradient(circle,rgba(124,245,165,.09),transparent_58%)] pointer-events-none" />
@@ -542,7 +557,7 @@ function FocusView({ focusTime, running, onToggle, onReset }: { focusTime: strin
       </div>
       <p className="text-nexus-mint/70 font-mono text-[10px] tracking-widest uppercase mb-3">Focus protocol</p>
       <h1 className="text-4xl md:text-5xl font-semibold tracking-tight text-nexus-text">One thing, done well.</h1>
-      <p className="text-nexus-muted text-sm mt-3">Review Placer.ai partnership brief</p>
+      <p className="text-nexus-muted text-sm mt-3">{target ?? 'No open priority — run the brief to load one.'}</p>
       <div className="my-9 text-nexus-text font-mono text-6xl md:text-7xl tracking-tighter">{focusTime}</div>
       <div className="flex gap-2">
         <button onClick={onToggle} className="px-4 h-9 rounded-md border border-nexus-mint bg-nexus-mint text-nexus-bg text-xs font-semibold hover:opacity-90 transition-opacity">
@@ -558,7 +573,8 @@ function FocusView({ focusTime, running, onToggle, onReset }: { focusTime: strin
 
 function PerformanceView({ completed, tasks }: { completed: number; tasks: Task[] }) {
   const total = tasks.length;
-  const pct = Math.round((completed / total) * 100);
+  const pct = total ? Math.round((completed / total) * 100) : 0;
+  const open = total - completed;
   return (
     <div className="w-full max-w-3xl mx-auto px-6 md:px-10 py-12">
       <h1 className="text-2xl font-semibold text-nexus-text mb-1">Performance</h1>
@@ -566,20 +582,21 @@ function PerformanceView({ completed, tasks }: { completed: number; tasks: Task[
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="rounded-xl border border-nexus-border bg-nexus-surface/90 p-5">
           <span className="text-[10px] font-mono text-nexus-dim uppercase tracking-widest">Priority completion</span>
-          <div className="text-3xl font-mono text-nexus-mint mt-2">{pct}%</div>
+          <div className="text-3xl font-mono text-nexus-mint mt-2">{total ? `${pct}%` : '—'}</div>
           <div className="h-1.5 mt-3 rounded-full bg-nexus-border overflow-hidden"><span className="block h-full bg-nexus-mint" style={{ width: `${pct}%` }} /></div>
         </div>
         <div className="rounded-xl border border-nexus-border bg-nexus-surface/90 p-5">
-          <span className="text-[10px] font-mono text-nexus-dim uppercase tracking-widest">Focus protected</span>
-          <div className="text-3xl font-mono text-nexus-blue mt-2">4.5h</div>
-          <span className="text-[10px] text-nexus-dim">2 deep blocks</span>
+          <span className="text-[10px] font-mono text-nexus-dim uppercase tracking-widest">Completed</span>
+          <div className="text-3xl font-mono text-nexus-blue mt-2">{completed}</div>
+          <span className="text-[10px] text-nexus-dim">of {total || '—'} priorities</span>
         </div>
         <div className="rounded-xl border border-nexus-border bg-nexus-surface/90 p-5">
-          <span className="text-[10px] font-mono text-nexus-dim uppercase tracking-widest">System capacity</span>
-          <div className="text-3xl font-mono text-nexus-purple mt-2">82%</div>
-          <span className="text-[10px] text-nexus-dim">Healthy</span>
+          <span className="text-[10px] font-mono text-nexus-dim uppercase tracking-widest">Still open</span>
+          <div className="text-3xl font-mono text-nexus-purple mt-2">{open}</div>
+          <span className="text-[10px] text-nexus-dim">{open ? 'needs attention' : 'all clear'}</span>
         </div>
       </div>
+      {total === 0 && <p className="text-nexus-dim text-xs mt-6">Nothing tracked yet — run the one-shot brief to populate priorities from your sources.</p>}
     </div>
   );
 }

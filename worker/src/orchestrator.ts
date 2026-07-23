@@ -15,7 +15,7 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
         type: 'object',
         properties: {
           title: { type: 'string', description: 'The task title' },
-          context: { type: 'string', description: 'Where this came from, e.g. "realmspace · ORACLE"' },
+          context: { type: 'string', description: 'Where this came from, e.g. "gmail · HERMES" or a project name' },
           agent: { type: 'string', description: 'Agent responsible, usually ATLAS' },
         },
         required: ['title', 'agent'],
@@ -47,7 +47,7 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
         properties: {
           content: { type: 'string', description: 'The distilled insight' },
           agent: { type: 'string', description: 'Owning agent, usually SCRIBE' },
-          source: { type: 'string', description: 'Optional source, e.g. "Placer.ai call"' },
+          source: { type: 'string', description: 'Optional source, e.g. "client call" or "pumble #general"' },
         },
         required: ['content', 'agent'],
       },
@@ -73,12 +73,12 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
 
 function buildSystem(liveContext: string): string {
   return (
-    'You are CONDUCTOR, the orchestrator of NEXUS, an AI-native personal command centre for Iyobosa. ' +
+    'You are CONDUCTOR, the orchestrator of NEXUS, an AI-native personal command centre for the operator. ' +
     'You have a council of specialist agents you can dispatch by calling tools. Choose the right agent for each job.\n\n' +
     'Available agents:\n' +
     agentListForPrompt() +
     (liveContext ? `\n\nLive context from the last one-shot brief (Pumble + Gmail + Zoho):\n${liveContext}` : '') +
-    '\n\nWhen you call a tool, the named agent performs it and it is logged. After tool calls, give Iyobosa a short, ' +
+    '\n\nWhen you call a tool, the named agent performs it and it is logged. After tool calls, give the operator a short, ' +
     'human summary of what the council did and the single most important next step. Never expose raw tool JSON. ' +
     'Keep replies under 120 words unless asked to expand.'
   );
