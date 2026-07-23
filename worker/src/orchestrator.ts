@@ -3,6 +3,7 @@ import type { D1Database } from '@cloudflare/workers-types';
 import type { ChatMessage, Env, ToolCallResult } from './types';
 import { agentListForPrompt, agentSystemPrompt } from './agents';
 import { createTask, logAgentRun, logDecision, logMemory, toggleTask, listTasks } from './db';
+import { loadSettings } from './settings';
 
 const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
@@ -70,16 +71,30 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   },
 ];
 
-function buildSystem(): string {
+function buildSystem(liveContext: string): string {
   return (
     'You are CONDUCTOR, the orchestrator of NEXUS, an AI-native personal command centre for Iyobosa. ' +
     'You have a council of specialist agents you can dispatch by calling tools. Choose the right agent for each job.\n\n' +
     'Available agents:\n' +
     agentListForPrompt() +
+    (liveContext ? `\n\nLive context from the last one-shot brief (Pumble + Gmail + Zoho):\n${liveContext}` : '') +
     '\n\nWhen you call a tool, the named agent performs it and it is logged. After tool calls, give Iyobosa a short, ' +
     'human summary of what the council did and the single most important next step. Never expose raw tool JSON. ' +
     'Keep replies under 120 words unless asked to expand.'
   );
+}
+
+/** Zero-credit context injection: reads the cached brief from D1 (never triggers a model call). */
+async function cachedBriefContext(db: D1Database): Promise<string> {
+  try {
+    const row = await db.prepare("SELECT value FROM settings WHERE key = '_brief_cache'").first<{ value: string }>();
+    if (!row) return '';
+    const b = JSON.parse(row.value) as { headline?: string; summary?: string; priorities?: { title: string; urgency: string }[] };
+    const pr = (b.priorities ?? []).map((p) => `- [${p.urgency}] ${p.title}`).join('\n');
+    return [b.headline ? `Headline: ${b.headline}` : '', b.summary ?? '', pr].filter(Boolean).join('\n').slice(0, 900);
+  } catch {
+    return '';
+  }
 }
 
 export interface OrchestrationResult {
@@ -91,18 +106,21 @@ export async function orchestrate(
   env: Env,
   history: ChatMessage[],
 ): Promise<OrchestrationResult> {
+  const settings = await loadSettings(env.DB, env);
+
   // No key configured: deterministic stub so the UI works end-to-end without a real LLM.
-  if (!env.OPENROUTER_API_KEY) {
+  if (!settings.OPENROUTER_API_KEY) {
     return stubOrchestrate(history, env.DB);
   }
 
   const client = new OpenAI({
-    apiKey: env.OPENROUTER_API_KEY,
+    apiKey: settings.OPENROUTER_API_KEY,
     baseURL: 'https://openrouter.ai/api/v1',
   });
 
+  const liveContext = await cachedBriefContext(env.DB);
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: 'system', content: buildSystem() },
+    { role: 'system', content: buildSystem(liveContext) },
     ...history.map((m) => ({
       role: m.role === 'agent' ? ('assistant' as const) : (m.role as 'user' | 'assistant' | 'system'),
       content: m.agent ? `[${m.agent}] ${m.content}` : m.content,
@@ -115,7 +133,7 @@ export async function orchestrate(
   // Allow up to 3 tool-call rounds.
   for (let round = 0; round < 3; round++) {
     const completion = await client.chat.completions.create({
-      model: env.OPENROUTER_MODEL || 'anthropic/claude-3.5-sonnet',
+      model: settings.OPENROUTER_MODEL || 'anthropic/claude-3.5-sonnet',
       messages,
       tools: TOOLS,
       tool_choice: 'auto',

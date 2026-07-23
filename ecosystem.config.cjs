@@ -1,11 +1,12 @@
 module.exports = {
   apps: [
     {
-      name: 'webapp',
-      script: 'npm',
-      args: 'run preview -- --host 0.0.0.0 --port 3000',
-      cwd: '/home/user/webapp',
-      env: { NODE_ENV: 'development', PORT: 3000 },
+      // One process = full system: Worker API + D1 (local) + built React UI.
+      name: 'nexus',
+      script: 'npx',
+      args: 'wrangler dev --port 3000 --ip 0.0.0.0',
+      cwd: '/home/user/webapp/worker',
+      env: { NODE_ENV: 'development' },
       watch: false,
       instances: 1,
       exec_mode: 'fork',

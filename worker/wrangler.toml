@@ -3,6 +3,12 @@ main = "src/index.ts"
 compatibility_date = "2024-11-06"
 compatibility_flags = ["nodejs_compat"]
 
+# Serve the built React app from the same Worker — one process, one deploy.
+[assets]
+directory = "../dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
 # D1 database binding (created via: wrangler d1 create nexus-db)
 [[d1_databases]]
 binding = "DB"

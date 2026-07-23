@@ -1,15 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { CheckCircle2 } from 'lucide-react';
 import type { AgentRole, Message, Mode, Task } from './types';
 import { AGENTS, TASKS } from './data/agents';
-import { streamChat, toggleTaskRemote, type ToolEvent } from './lib/api';
+import {
+  fetchBrief, fetchTasks, runBriefNow, streamChat, toggleTaskRemote,
+  type Brief, type ToolEvent,
+} from './lib/api';
 import Topbar from './components/Topbar';
 import LeftRail from './components/LeftRail';
 import CenterStage from './components/CenterStage';
 import RightRail from './components/RightRail';
 import BottomBar from './components/BottomBar';
 import CommandPalette from './components/CommandPalette';
+import SourcesModal from './components/SourcesModal';
 
 const MODE_VIEWS: Record<Mode, string> = {
   COMMAND: 'Command centre',
@@ -22,6 +26,9 @@ const MODE_VIEWS: Record<Mode, string> = {
 function App() {
   const [mode, setMode] = useState<Mode>('COMMAND');
   const [tasks, setTasks] = useState<Task[]>(TASKS);
+  const [brief, setBrief] = useState<Brief | null>(null);
+  const [briefRunning, setBriefRunning] = useState(false);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<AgentRole>('ATLAS');
   const [contextOpen, setContextOpen] = useState(false);
@@ -55,6 +62,48 @@ function App() {
     return () => window.clearTimeout(t);
   }, [toast]);
 
+  const refreshTasks = useCallback(async () => {
+    try {
+      const remote = await fetchTasks();
+      if (remote.length) setTasks(remote.map((t) => ({ ...t, done: !!t.done, priority: !!t.priority })));
+    } catch {
+      /* worker offline — keep seeded tasks */
+    }
+  }, []);
+
+  // Boot: load real tasks + the cached brief (GET path — zero credits).
+  useEffect(() => {
+    refreshTasks();
+    fetchBrief()
+      .then((b) => {
+        setBrief(b);
+        refreshTasks();
+      })
+      .catch(() => {
+        /* worker offline — UI still usable */
+      });
+  }, [refreshTasks]);
+
+  // The ONE-SHOT pass: pull Pumble + Gmail + Zoho, one model call, done.
+  const runBrief = useCallback(async () => {
+    setBriefRunning(true);
+    setToast('CONDUCTOR running the one-shot pass…');
+    try {
+      const b = await runBriefNow();
+      setBrief(b);
+      await refreshTasks();
+      setToast(
+        b.error
+          ? `Sources pulled, triage failed: ${b.error.slice(0, 60)}`
+          : `Brief ready · ${b.priorities.length} priorities · ${b.inbox.length} items scanned`,
+      );
+    } catch {
+      setToast('Brief failed — is the Worker running?');
+    } finally {
+      setBriefRunning(false);
+    }
+  }, [refreshTasks]);
+
   const toggleTask = async (id: number) => {
     // Optimistic local update, then reconcile with the backend.
     setTasks((items) => items.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
@@ -67,6 +116,7 @@ function App() {
   };
 
   const sendMessage = (text: string) => {
+    if (mode !== 'DEEP') setMode('DEEP'); // conversation lives in the CONDUCTOR thread
     const userMsg: Message = { id: Date.now().toString(), sender: 'USER', content: text, timestamp: new Date() };
     const history: Message[] = [...messages, userMsg];
     setMessages(history);
@@ -80,10 +130,8 @@ function App() {
       {
         onTool: (tool: ToolEvent) => {
           setToast(`${tool.agent} · ${tool.action}`);
-          // A captured/changed task means we should refresh the queue.
-          if (tool.action.toLowerCase().includes('task')) {
-            // Tasks are seeded locally; for a live backend the UI would refetch /api/state here.
-          }
+          // A captured/changed task means the queue changed server-side — refetch it.
+          if (tool.action.toLowerCase().includes('task')) refreshTasks();
         },
         onReply: ({ content }) => {
           setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content } : m)));
@@ -110,7 +158,8 @@ function App() {
     else if (action === 'person') setToast('Opening network graph search');
     else if (action === 'comms') setToast('HERMES is drafting your message');
     else if (action === 'judge') setToast('JUDGE decision journal opened');
-    else setToast('ATLAS is preparing your daily brief');
+    else if (action === 'sources') setSourcesOpen(true);
+    else runBrief();
   };
 
   const selectedAgentData = AGENTS.find((a) => a.id === selectedAgent) ?? AGENTS[1];
@@ -135,6 +184,10 @@ function App() {
             onOpenPalette={() => setPaletteOpen(true)}
             onToggleContext={() => setContextOpen((o) => !o)}
             streaming={streaming}
+            brief={brief}
+            briefRunning={briefRunning}
+            onRunBrief={runBrief}
+            onOpenSources={() => setSourcesOpen(true)}
           />
         </main>
 
@@ -144,6 +197,13 @@ function App() {
       <BottomBar onOpenCmd={() => setPaletteOpen(true)} prioritiesDone={completed} prioritiesTotal={tasks.length} />
 
       <CommandPalette isOpen={paletteOpen} onClose={() => setPaletteOpen(false)} onAction={runCommand} />
+
+      <SourcesModal
+        isOpen={sourcesOpen}
+        onClose={() => setSourcesOpen(false)}
+        sources={brief?.sources}
+        onSaved={() => fetchBrief().then(setBrief).catch(() => undefined)}
+      />
 
       <AnimatePresence>
         {toast && (

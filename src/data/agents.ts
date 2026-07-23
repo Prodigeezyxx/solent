@@ -30,6 +30,8 @@ export const SIGNALS: Signal[] = [
 ];
 
 export const COMMANDS: Command[] = [
+  { icon: 'brief', label: 'Run the one-shot brief', hint: 'Pull Pumble + Gmail + Zoho · one model call', action: 'brief' },
+  { icon: 'capture', label: 'Connect sources', hint: 'Pumble, Gmail, Zoho Mail, model key', action: 'sources' },
   { icon: 'capture', label: 'Capture a thought', hint: 'Route to SCRIBE', action: 'capture' },
   { icon: 'focus', label: 'Start focus mode', hint: 'Block distractions for 50 minutes', action: 'focus' },
   { icon: 'search', label: 'Search the knowledge graph', hint: 'People, projects, decisions, notes', action: 'search' },

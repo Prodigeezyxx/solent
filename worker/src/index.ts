@@ -3,10 +3,45 @@ import type { Env } from './types';
 import { orchestrate } from './orchestrator';
 import { listTasks, toggleTask, createTask } from './db';
 import { recentMemories } from './db';
+import { runBrief } from './brief';
+import { loadSettings, saveSettings, settingsStatus } from './settings';
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.get('/', (c) => c.json({ service: 'nexus-conductor', status: 'ok' }));
+app.get('/api/health', (c) => c.json({ service: 'nexus-conductor', status: 'ok' }));
+
+// ---- ONE-SHOT EXECUTIVE PASS -------------------------------------------
+// Pulls Pumble + Gmail + Zoho in parallel, makes exactly ONE LLM call,
+// persists priorities, and caches the result (default 30 min TTL).
+app.post('/api/brief', async (c) => {
+  const force = c.req.query('force') === '1';
+  const brief = await runBrief(c.env, { force });
+  return c.json(brief);
+});
+
+app.get('/api/brief', async (c) => {
+  // Read path never spends credits unless the cache is cold AND sources have items.
+  const brief = await runBrief(c.env, { force: false });
+  return c.json(brief);
+});
+
+// ---- SETTINGS / SOURCES -------------------------------------------------
+app.get('/api/settings', async (c) => {
+  const s = await loadSettings(c.env.DB, c.env);
+  return c.json(settingsStatus(s));
+});
+
+app.post('/api/settings', async (c) => {
+  let body: Record<string, string>;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'invalid json' }, 400);
+  }
+  await saveSettings(c.env.DB, body);
+  const s = await loadSettings(c.env.DB, c.env);
+  return c.json(settingsStatus(s));
+});
 
 // Lightweight health/state snapshot the UI can poll.
 app.get('/api/state', async (c) => {
@@ -73,6 +108,13 @@ app.post('/api/chat', async (c) => {
       Connection: 'keep-alive',
     },
   });
+});
+
+// Anything that isn't /api/* falls through to the built SPA assets.
+app.all('*', (c) => {
+  const assets = (c.env as unknown as { ASSETS?: { fetch: (r: Request) => Promise<Response> } }).ASSETS;
+  if (assets) return assets.fetch(c.req.raw);
+  return c.json({ service: 'nexus-conductor', status: 'ok' });
 });
 
 export default app;

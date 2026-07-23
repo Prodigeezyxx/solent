@@ -1,116 +1,73 @@
 # NEXUS Command Centre
 
-NEXUS is an AI-native personal operating system for turning signals, memory, relationships, and agent work into a clear daily execution plan.
+NEXUS is your **second executive-function layer**: it connects your real work sources — **Pumble** (team chat), **Gmail** (personal), and **Zoho Mail** (company) — pulls everything in **one shot**, triages it with a **single model call**, and turns it into priorities, signals, and drafted replies.
+
+## How the one-shot pass works (credit optimisation)
+
+1. **Fetch (zero credits).** Pumble channels, Gmail inbox (metadata + snippets), and Zoho Mail are pulled **in parallel** over plain HTTP.
+2. **Condense before prompting.** Items are HTML-stripped, clipped to ≤280 chars, and capped at ~40 items — keeping the prompt a few thousand tokens.
+3. **Exactly ONE model call.** No agent loops, no tool rounds. One structured-JSON response contains the headline, summary, priorities, signals, and reply drafts.
+4. **Cache.** The brief is cached in D1 (default 30 min, configurable). Reopening the dashboard inside the window costs **zero credits**. Empty inboxes never trigger a model call at all.
+5. **Free context reuse.** The CONDUCTOR chat injects the cached brief into its system prompt for free — no extra pulls.
 
 ## Completed features
 
-- Responsive command-centre dashboard for desktop, tablet, and mobile
-- Four operating modes: Command, Focus, Receive, and Deep work
-- Functional priority queue with completion state
-- Focus timer with pause, resume, and reset controls
-- Search/command palette with `Cmd/Ctrl + K` and Escape support
-- Interactive AI agent council and context panel
-- Signal radar, schedule, metrics, system health, and knowledge context
-- Functional command composer, status feedback, mobile navigation, and toast states
-- Keyboard focus styles, semantic landmarks, skip link, reduced-motion support, and accessible labels
-- Production Vite build with zero known package vulnerabilities
+- **One-shot executive brief** — `POST /api/brief` pulls all sources → one LLM call → priorities persisted as tasks in D1
+- **Pumble connector** — official API-Keys addon; scans channels (optionally restricted via `PUMBLE_CHANNELS`)
+- **Gmail connector** — OAuth2 refresh-token flow; inbox metadata + snippets, promotions/social filtered out
+- **Zoho Mail connector** — OAuth2 refresh-token flow; auto-discovers account id, multi-DC support
+- **Sources panel in the UI** — connect/rotate all credentials at runtime (stored in D1, write-only; env vars as fallback)
+- **Unified RECEIVE inbox** — all three sources merged, filterable, with per-item "reply →" handoff to CONDUCTOR
+- **HERMES reply drafts** — the brief proposes ≤3 replies for messages awaiting you; refine them in the chat thread
+- **Live dashboard** — headline, executive summary, source health chips, real task queue from D1
+- **CONDUCTOR chat** (DEEP mode) — tool-calling orchestrator (capture task / complete / memory / decision) with cached-brief context
+- Single-process serving: the Cloudflare Worker serves both the API and the built React app
 
 ## Entry URIs
 
 | Path | Purpose |
 | --- | --- |
-| `/` | NEXUS dashboard and all client-side workspace modes |
+| `/` | Dashboard (COMMAND), unified inbox (RECEIVE), chat (DEEP), focus, performance |
+| `GET /api/health` | Service health |
+| `GET /api/brief` | Cached brief (zero-credit read path) |
+| `POST /api/brief?force=1` | Run the one-shot pass now (one model call) |
+| `GET/POST /api/settings` | Connector credentials (secrets write-only, never echoed) |
+| `GET /api/state` | Tasks + memories snapshot |
+| `POST /api/tasks`, `POST /api/tasks/:id/toggle` | Task CRUD |
+| `POST /api/chat` | CONDUCTOR chat (SSE) |
 
-This version is a client-side product prototype and has no public API routes.
+## Connecting your sources (once, from the UI → "sources" chip)
+
+- **Pumble:** install the *API Keys* addon in Pumble → generate key → paste. Optional: limit channels (`general, product`).
+- **Gmail:** Google Cloud project → enable Gmail API → OAuth client (scope `gmail.readonly`) → obtain a refresh token → paste client id/secret/refresh token.
+- **Zoho Mail:** [Zoho API console](https://api-console.zoho.com) → Self Client → scopes `ZohoMail.messages.READ,ZohoMail.accounts.READ` → generate refresh token. Set data centre (`com`, `eu`, `in`, …) if not US.
+- **Model:** OpenRouter API key. Default model is configurable; a cheap/free model works — the pass needs only one JSON completion.
+
+Credentials can also be provided as Worker secrets (`wrangler secret put PUMBLE_API_KEY` etc.); values saved in the UI take precedence.
 
 ## Local use
 
 ```bash
-npm install
-npm run lint
-npm run build
-npm run dev
+npm install && npm run build          # build the UI
+cd worker && npm install
+npx wrangler d1 migrations apply nexus-db --local
+npx wrangler dev --port 3000          # serves API + UI together
 ```
 
-The app runs on `http://localhost:3000` by default. In the sandbox, use `pm2 start ecosystem.config.cjs` after building.
-
-### Main controls
-
-- Press `Cmd/Ctrl + K` to open the command palette.
-- Select a mode from the left navigation.
-- Complete or reopen priorities from the queue.
-- Select an agent to load its working context.
-- Type into the bottom command bar to route a request through CONDUCTOR.
+In the sandbox: `pm2 start ecosystem.config.cjs`.
 
 ## Data architecture
 
-- **Current state:** in-memory React state with curated prototype data
-- **Persistence:** none yet
-- **External AI services:** none connected; no secrets are exposed in the frontend
-- **Recommended production storage:** Cloudflare D1 for tasks, signals, memories, decisions, and agent runs; KV for preferences and fast session context
-
-## Architecture
-
-NEXUS is now a full-stack app: a React client plus a **Cloudflare Worker** that runs **CONDUCTOR**, a server-side LLM orchestrator.
-
-- **Client** (`src/`): React 19 + Vite + Tailwind. The command bar, palette, and priority queue talk to the Worker over `/api/*`.
-- **Worker** (`worker/`): Hono app on Cloudflare, backed by **OpenRouter** (model-agnostic) and **D1** (SQLite at the edge).
-- **CONDUCTOR**: on each message it calls OpenRouter with tool-calling enabled. The 13-agent council (ATLAS, SCRIBE, ORACLE, …) is invoked by the model through tools — `capture_task`, `complete_task`, `log_memory`, `log_decision` — which perform **real D1 writes** and are logged to `agent_runs`.
-- **Streaming**: chat replies stream back to the UI over Server-Sent Events, so the council feels live.
-
-### Flow
-
-```
-UI composer/palette
-   │  POST /api/chat  (SSE stream)
-   ▼
-Cloudflare Worker (Hono)
-   │  OpenRouter chat.completions (tools: capture_task, log_memory, log_decision, …)
-   ▼
-D1  ── tasks / memories / decisions / agent_runs
-   │
-   ▼
-streamed reply + tool events → UI
-```
-
-## Local development (two terminals)
-
-1. **Frontend** (this repo root):
-   ```bash
-   npm install
-   npm run dev          # http://localhost:3000
-   ```
-2. **Worker** (`worker/`):
-   ```bash
-   cd worker
-   npm install
-   npx wrangler d1 create nexus-db        # copy the returned id into wrangler.toml database_id
-   npm run migrate:local                   # applies migrations/0001_init.sql to local D1
-   npx wrangler dev                        # serves the API on http://localhost:8787
-   ```
-   Vite proxies `/api/*` → `http://localhost:8787` (override with `WORKER_URL`).
-
-3. **Wire the model key** (one time):
-   ```bash
-   cd worker
-   npx wrangler secret put OPENROUTER_API_KEY   # paste your OpenRouter key
-   # optional: npx wrangler secret put OPENROUTER_MODEL
-   ```
-   Without a key the Worker still runs a **deterministic stub** orchestrator so the UI works end-to-end.
-
-> The client sends traffic to `/api/*`; in dev the Vite proxy forwards to the Worker, and in production the Worker is deployed in front of (or alongside) the static assets.
-
-## Not yet implemented
-
-- Authentication and per-user workspaces (currently a single prototype workspace)
-- Live calendar, CRM, email, and knowledge-source connectors
-- Explicit human approval gates for outbound actions
-- Run traces, eval fixtures, retry budgets, and cost/latency telemetry in the UI
-- Production analytics and observability
+- **D1 (SQLite):** tasks, memories, decisions, agent runs, settings (credentials + OAuth token cache + brief cache)
+- **Connectors:** Pumble API-Keys addon, Gmail REST v1, Zoho Mail REST — all read paths, no external state
+- **LLM:** OpenRouter (model-agnostic), one structured-JSON call per brief run
 
 ## Deployment
 
-- **Worker:** `cd worker && npm run deploy` (after setting `database_id` in `wrangler.toml` and the secrets above).
-- **Frontend:** `npm run build` → static `dist/` (edge-compatible). Serve via Cloudflare Pages or any static host, with `/api` routed to the Worker.
-- **Stack:** React 19, TypeScript, Vite, Tailwind, Motion, Lucide · Cloudflare Worker (Hono) · D1 · OpenRouter.
-- **Last updated:** 2026-07-20
+Cloudflare Workers with static assets: `cd worker && npx wrangler deploy` (set a real `database_id` in `wrangler.toml` and run remote migrations first).
+
+## Recommended next steps
+
+- Send path: post approved drafts back through Pumble `sendMessage` and Gmail/Zoho send scopes
+- Scheduled runs: a Cron Trigger calling `runBrief` each morning so the day is triaged before you open the app
+- Per-item done/dismiss state on the unified inbox

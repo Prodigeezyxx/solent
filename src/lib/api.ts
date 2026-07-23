@@ -75,6 +75,73 @@ export async function fetchTasks(): Promise<Task[]> {
   return json.tasks;
 }
 
+// ---- One-shot executive brief -------------------------------------------
+
+export interface InboxItem {
+  source: 'pumble' | 'gmail' | 'zoho';
+  ref: string;
+  from: string;
+  title: string;
+  text: string;
+  ts: string;
+}
+
+export interface BriefSourceMeta {
+  source: string;
+  configured: boolean;
+  ok: boolean;
+  count: number;
+  error?: string;
+}
+
+export interface Brief {
+  generated_at: number;
+  cached: boolean;
+  headline: string;
+  summary: string;
+  priorities: { title: string; context: string; urgency: 'high' | 'medium' | 'low'; source_ref: string }[];
+  signals: { label: string; title: string; meta: string; score: string }[];
+  replies: { to: string; channel: string; re: string; draft: string }[];
+  sources: BriefSourceMeta[];
+  inbox: InboxItem[];
+  model?: string;
+  error?: string;
+}
+
+/** GET path: serves the cached brief when fresh — zero credits. */
+export async function fetchBrief(): Promise<Brief> {
+  const res = await fetch('/api/brief');
+  if (!res.ok) throw new Error(`brief failed (${res.status})`);
+  return (await res.json()) as Brief;
+}
+
+/** POST with force: re-pulls all sources and spends exactly one model call. */
+export async function runBriefNow(): Promise<Brief> {
+  const res = await fetch('/api/brief?force=1', { method: 'POST' });
+  if (!res.ok) throw new Error(`brief failed (${res.status})`);
+  return (await res.json()) as Brief;
+}
+
+// ---- Settings / sources ---------------------------------------------------
+
+export type SettingsStatus = Record<string, string | boolean>;
+
+export async function fetchSettings(): Promise<SettingsStatus> {
+  const res = await fetch('/api/settings');
+  if (!res.ok) throw new Error('settings failed');
+  return (await res.json()) as SettingsStatus;
+}
+
+export async function saveSettingsRemote(patch: Record<string, string>): Promise<SettingsStatus> {
+  const res = await fetch('/api/settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error('settings save failed');
+  return (await res.json()) as SettingsStatus;
+}
+
 export async function toggleTaskRemote(id: number): Promise<Task> {
   const res = await fetch(`/api/tasks/${id}/toggle`, { method: 'POST' });
   if (!res.ok) throw new Error('toggle failed');
