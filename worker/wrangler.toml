@@ -9,6 +9,11 @@ directory = "../dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 
+# Morning auto-brief: sources are pulled and triaged before you open the app.
+# 06:30 UTC weekdays — one model call per day baseline.
+[triggers]
+crons = ["30 6 * * 1-5"]
+
 # D1 database binding (created via: wrangler d1 create nexus-db)
 [[d1_databases]]
 binding = "DB"

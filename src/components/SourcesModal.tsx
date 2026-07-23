@@ -19,6 +19,15 @@ interface FieldDef {
 
 const GROUPS: { id: string; title: string; hint: string; fields: FieldDef[] }[] = [
   {
+    id: 'operator',
+    title: 'Operator — who this console serves',
+    hint: 'Used to personalize the brief and detect messages aimed at you. Name should match how teammates address you in Pumble.',
+    fields: [
+      { key: 'OPERATOR_NAME', label: 'Your name', placeholder: 'e.g. Alex' },
+      { key: 'OPERATOR_CONTEXT', label: 'Context (role, company, current focus)', placeholder: 'Founder of Floats XR / realmspace — raising, shipping v2…' },
+    ],
+  },
+  {
     id: 'pumble',
     title: 'Pumble — work context',
     hint: 'Install the “API Keys” addon in Pumble, generate a key, paste it here. Optionally limit which channels are scanned.',
@@ -51,10 +60,10 @@ const GROUPS: { id: string; title: string; hint: string; fields: FieldDef[] }[] 
   {
     id: 'llm',
     title: 'Model — one call per pass',
-    hint: 'OpenRouter key. The brief makes exactly ONE model call per run and caches the result to keep credits minimal.',
+    hint: 'OpenRouter key. ONE model call per pass, cached. Kimi-ready — set the model to moonshotai/kimi-k2 (or any OpenRouter slug); JSON parsing tolerates models without response_format support.',
     fields: [
       { key: 'OPENROUTER_API_KEY', label: 'OpenRouter API key', secret: true },
-      { key: 'OPENROUTER_MODEL', label: 'Model (optional)', placeholder: 'anthropic/claude-3.5-sonnet' },
+      { key: 'OPENROUTER_MODEL', label: 'Model (optional)', placeholder: 'moonshotai/kimi-k2' },
       { key: 'BRIEF_TTL_MINUTES', label: 'Cache window, minutes (default 30)', placeholder: '30' },
     ],
   },

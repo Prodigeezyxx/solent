@@ -2,16 +2,16 @@ import type { D1Database } from '@cloudflare/workers-types';
 import type { Brief } from './brief';
 
 /**
- * Knowledge graph builder — zero LLM cost.
- * Derives a relationship tree from what the system already knows:
- * sources → people → messages, plus priorities, signals, reply drafts,
- * memories, and decisions from D1. Edges encode provenance
- * ("this task came from that message from that person on that source").
+ * Knowledge graph v2 — zero LLM cost.
+ * Built from the durable identity layer (people, items) plus brief outputs
+ * and D1 logs. Names are always resolved; channels are first-class nodes;
+ * items that need attention pulse heavier.
  */
 
 export type NodeType =
   | 'hub'
   | 'source'
+  | 'channel'
   | 'person'
   | 'message'
   | 'task'
@@ -25,7 +25,8 @@ export interface GraphNode {
   type: NodeType;
   label: string;
   detail?: string;
-  weight: number; // relative importance → node size
+  weight: number;
+  attention?: boolean;
 }
 
 export interface GraphEdge {
@@ -43,13 +44,8 @@ export interface Graph {
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
-/** Normalise "Jane Doe <jane@x.com>" → "Jane Doe"; bare emails keep the local part. */
-function personName(from: string): string {
-  const m = from.match(/^"?([^"<]+?)"?\s*<[^>]+>$/);
-  if (m) return m[1].trim();
-  const email = from.match(/^([^@\s]+)@/);
-  if (email) return email[1];
-  return from.trim() || 'unknown';
+function personKey(name: string): string {
+  return `person:${name.toLowerCase().trim()}`;
 }
 
 export async function buildGraph(db: D1Database): Promise<Graph> {
@@ -57,8 +53,11 @@ export async function buildGraph(db: D1Database): Promise<Graph> {
   const edges: GraphEdge[] = [];
   const addNode = (n: GraphNode) => {
     const prev = nodes.get(n.id);
-    if (prev) prev.weight = Math.max(prev.weight, n.weight);
-    else nodes.set(n.id, n);
+    if (prev) {
+      prev.weight = Math.max(prev.weight, n.weight);
+      prev.attention = prev.attention || n.attention;
+      if (!prev.detail && n.detail) prev.detail = n.detail;
+    } else nodes.set(n.id, n);
   };
   const addEdge = (from: string, to: string, kind: GraphEdge['kind']) => {
     if (from === to) return;
@@ -67,7 +66,7 @@ export async function buildGraph(db: D1Database): Promise<Graph> {
 
   addNode({ id: 'hub', type: 'hub', label: 'NEXUS', detail: 'Your executive layer', weight: 10 });
 
-  // ---- Brief cache: sources, inbox, priorities, signals, drafts ----------
+  // ---- Brief cache: source health + LLM outputs -------------------------
   let brief: Brief | null = null;
   try {
     const row = await db.prepare("SELECT value FROM settings WHERE key = '_brief_cache'").first<{ value: string }>();
@@ -76,9 +75,6 @@ export async function buildGraph(db: D1Database): Promise<Graph> {
     /* no cache yet */
   }
 
-  const inbox = brief?.inbox ?? [];
-  const personIds = new Map<string, string>();
-
   for (const s of brief?.sources ?? []) {
     if (!s.configured) continue;
     const id = `source:${s.source}`;
@@ -86,39 +82,99 @@ export async function buildGraph(db: D1Database): Promise<Graph> {
     addEdge('hub', id, 'has');
   }
 
-  // People + messages (cap to keep the canvas readable)
-  const msgCap = 30;
-  inbox.slice(0, msgCap).forEach((item, idx) => {
-    const srcId = `source:${item.source}`;
+  // ---- Durable items: channels, people, messages -------------------------
+  interface ItemRow {
+    id: number;
+    source: string;
+    channel: string | null;
+    from_name: string;
+    title: string;
+    text: string;
+    is_dm: number;
+    needs_attention: number;
+    attention_reason: string | null;
+  }
+  let items: ItemRow[] = [];
+  try {
+    const { results } = await db
+      .prepare('SELECT id, source, channel, from_name, title, text, is_dm, needs_attention, attention_reason FROM items WHERE seen = 0 ORDER BY needs_attention DESC, created_at DESC LIMIT 40')
+      .all<ItemRow>();
+    items = results ?? [];
+  } catch {
+    /* pre-migration */
+  }
+
+  const personTitles = new Map<string, string>();
+  try {
+    const { results } = await db.prepare('SELECT name, title FROM people WHERE title IS NOT NULL').all<{ name: string; title: string }>();
+    for (const p of results ?? []) personTitles.set(p.name.toLowerCase(), p.title);
+  } catch {
+    /* pre-migration */
+  }
+
+  const refToMsgNode = new Map<number, string>(); // items.id -> node id
+  items.forEach((it) => {
+    const srcId = `source:${it.source}`;
     if (!nodes.has(srcId)) {
-      addNode({ id: srcId, type: 'source', label: item.source.toUpperCase(), weight: 6 });
+      addNode({ id: srcId, type: 'source', label: it.source.toUpperCase(), weight: 6 });
       addEdge('hub', srcId, 'has');
     }
-    const name = personName(item.from);
-    const pid = `person:${name.toLowerCase()}`;
-    if (!personIds.has(pid)) {
-      personIds.set(pid, name);
-      addNode({ id: pid, type: 'person', label: name, detail: item.from, weight: 3 });
-      addEdge(srcId, pid, 'has');
+
+    // Channel node (skip synthetic DM channels; DMs connect person→message directly)
+    let parentId = srcId;
+    if (it.channel && !it.is_dm) {
+      const chId = `channel:${it.source}:${it.channel.toLowerCase()}`;
+      addNode({ id: chId, type: 'channel', label: it.channel, detail: `${it.source} channel`, weight: 4 });
+      addEdge(srcId, chId, 'has');
+      parentId = chId;
+    }
+
+    const pid = personKey(it.from_name);
+    const title = personTitles.get(it.from_name.toLowerCase());
+    if (!nodes.has(pid)) {
+      addNode({ id: pid, type: 'person', label: it.from_name, detail: title ?? undefined, weight: 3 });
     } else {
       const p = nodes.get(pid)!;
-      p.weight = Math.min(p.weight + 0.5, 6); // frequent senders grow
-      addEdge(srcId, pid, 'has');
+      p.weight = Math.min(p.weight + 0.5, 6);
     }
-    const mid = `msg:${idx}`;
-    addNode({ id: mid, type: 'message', label: clip(item.title, 40), detail: clip(item.text, 160), weight: 1.6 });
+    addEdge(parentId, pid, 'has');
+
+    const mid = `item:${it.id}`;
+    refToMsgNode.set(it.id, mid);
+    addNode({
+      id: mid,
+      type: 'message',
+      label: clip(it.title !== it.channel ? it.title : it.text, 40),
+      detail: `${it.channel ?? it.source} · ${clip(it.text, 150)}${it.needs_attention ? ` · ⚑ ${it.attention_reason}` : ''}`,
+      weight: it.needs_attention ? 2.6 : 1.5,
+      attention: !!it.needs_attention,
+    });
     addEdge(pid, mid, 'sent');
+    if (it.is_dm) addEdge(srcId, mid, 'in');
   });
 
-  // Priorities from the brief → link back to their source message when possible.
-  // source_ref format is "[source:n]" / "source:n" where n is the 1-based digest index.
+  // ---- Brief outputs: priorities, signals, drafts -------------------------
+  const inbox = brief?.inbox ?? [];
   (brief?.priorities ?? []).forEach((p, i) => {
     const id = `brief-task:${i}`;
-    addNode({ id, type: 'task', label: clip(p.title, 48), detail: `${p.urgency} · ${p.context}`, weight: p.urgency === 'high' ? 4.5 : 3.5 });
+    addNode({ id, type: 'task', label: clip(p.title, 48), detail: `${p.urgency} · ${p.context}`, weight: p.urgency === 'high' ? 4.5 : 3.5, attention: p.urgency === 'high' });
+    // Link back through the digest index → durable item when possible
     const ref = (p.source_ref ?? '').match(/(\d+)/);
     const idx = ref ? Number(ref[1]) - 1 : -1;
-    if (idx >= 0 && idx < Math.min(inbox.length, msgCap)) addEdge(`msg:${idx}`, id, 'derived');
-    else addEdge('hub', id, 'derived');
+    const srcItem = idx >= 0 ? inbox[idx] : undefined;
+    if (srcItem) {
+      const match = items.find((it) => it.source === srcItem.source && (it.title === srcItem.title || it.text === srcItem.text));
+      if (match) {
+        addEdge(refToMsgNode.get(match.id)!, id, 'derived');
+        return;
+      }
+      const pid = personKey(srcItem.from);
+      if (nodes.has(pid)) {
+        addEdge(pid, id, 'derived');
+        return;
+      }
+    }
+    addEdge('hub', id, 'derived');
   });
 
   (brief?.signals ?? []).forEach((s, i) => {
@@ -130,22 +186,19 @@ export async function buildGraph(db: D1Database): Promise<Graph> {
   (brief?.replies ?? []).forEach((r, i) => {
     const id = `draft:${i}`;
     addNode({ id, type: 'draft', label: clip(`re: ${r.re}`, 40), detail: clip(r.draft, 160), weight: 2.5 });
-    const pid = `person:${personName(r.to).toLowerCase()}`;
+    const pid = personKey(r.to);
     if (nodes.has(pid)) addEdge(id, pid, 'about');
-    else {
-      const sid = `source:${r.channel}`;
-      addEdge(nodes.has(sid) ? sid : 'hub', id, 'has');
-    }
-    if (nodes.has(`source:${r.channel}`)) addEdge(`source:${r.channel}`, id, 'has');
+    const sid = `source:${r.channel}`;
+    if (nodes.has(sid)) addEdge(sid, id, 'has');
+    else if (!nodes.has(pid)) addEdge('hub', id, 'has');
   });
 
-  // ---- D1: open tasks, memories, decisions --------------------------------
+  // ---- D1 logs: open tasks, memories, decisions ---------------------------
   try {
     const { results: tasks } = await db
       .prepare('SELECT id, title, context, done FROM tasks ORDER BY created_at DESC LIMIT 20')
       .all<{ id: number; title: string; context: string | null; done: number }>();
     for (const t of tasks ?? []) {
-      // Skip if the same title already exists as a brief priority node
       const dup = [...nodes.values()].some((n) => n.type === 'task' && n.label.toLowerCase() === clip(t.title, 48).toLowerCase());
       if (dup) continue;
       const id = `task:${t.id}`;
@@ -172,7 +225,7 @@ export async function buildGraph(db: D1Database): Promise<Graph> {
       addEdge('hub', id, 'logged');
     }
   } catch {
-    /* tables may be empty/missing on first boot */
+    /* tables may be empty on first boot */
   }
 
   const nodeList = [...nodes.values()];

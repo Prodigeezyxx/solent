@@ -26,6 +26,25 @@ app.get('/api/brief', async (c) => {
   return c.json(brief);
 });
 
+// ---- ATTENTION QUEUE ------------------------------------------------------
+// Durable "needs you" items — zero-credit reads from the identity layer.
+app.get('/api/attention', async (c) => {
+  try {
+    const { results } = await c.env.DB
+      .prepare('SELECT id, source, channel, from_name, title, text, ts, is_dm, mentions_me, attention_reason FROM items WHERE needs_attention = 1 AND seen = 0 ORDER BY created_at DESC LIMIT 30')
+      .all();
+    return c.json({ items: results ?? [] });
+  } catch {
+    return c.json({ items: [] });
+  }
+});
+
+app.post('/api/attention/:id/seen', async (c) => {
+  const id = Number(c.req.param('id'));
+  await c.env.DB.prepare('UPDATE items SET seen = 1 WHERE id = ?').bind(id).run();
+  return c.json({ ok: true });
+});
+
 // ---- KNOWLEDGE GRAPH ----------------------------------------------------
 // Relationship tree over everything the system knows. Pure D1 reads — free.
 app.get('/api/graph', async (c) => {
@@ -125,4 +144,11 @@ app.all('*', (c) => {
   return c.json({ service: 'nexus-conductor', status: 'ok' });
 });
 
-export default app;
+export default {
+  fetch: app.fetch,
+  // Morning auto-brief: the day is triaged before the app is even opened.
+  // Configure with [triggers] crons in wrangler.toml. force=true refreshes the cache.
+  async scheduled(_event: ScheduledEvent, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil(runBrief(env, { force: true }));
+  },
+};

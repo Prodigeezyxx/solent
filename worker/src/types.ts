@@ -14,6 +14,8 @@ export interface Env {
   ZOHO_REFRESH_TOKEN?: string;
   ZOHO_ACCOUNT_ID?: string;
   ZOHO_DC?: string;
+  OPERATOR_NAME?: string;
+  OPERATOR_CONTEXT?: string;
   BRIEF_TTL_MINUTES?: string;
 }
 

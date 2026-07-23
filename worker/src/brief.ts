@@ -1,21 +1,22 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import type { Env } from './types';
-import { digestForPrompt, fetchAllSources, type SourceItem, type SourceResult } from './connectors';
+import { digestForPrompt, fetchAllSources, persistPass, type SourceItem, type SourceResult } from './connectors';
 import { loadSettings, type Settings } from './settings';
 import { createTask, logAgentRun, logMemory } from './db';
 
 /**
  * ONE-SHOT EXECUTIVE PASS.
  *
- * Credit-optimisation strategy:
- *  1. All source fetches (Pumble + Gmail + Zoho) are plain HTTP — zero LLM cost.
- *  2. Raw items are stripped, clipped, and capped BEFORE prompting (~40 items,
- *     ≤280 chars each), keeping the input under a few thousand tokens.
- *  3. Exactly ONE model call per run — no tool loops, no multi-round agents.
- *     The model returns a single structured JSON object covering everything:
- *     summary, priorities, signals, and suggested replies.
- *  4. Results are cached in D1 with a TTL (default 30 min). Re-opening the
- *     dashboard inside the window costs zero credits.
+ * Credit strategy (unchanged): parallel zero-credit fetches → condensed
+ * digest → exactly ONE model call → D1 cache with TTL.
+ *
+ * New in this layer:
+ *  - Identity-resolved digest (real names, channels, DM/mention/attention flags)
+ *  - Durable persistence of people + items (system of record beyond the cache)
+ *  - Operator personalisation (OPERATOR_NAME / OPERATOR_CONTEXT)
+ *  - Model-agnostic JSON handling: works with strict-JSON models (Claude,
+ *    GPT) AND models without response_format support (e.g. Kimi K2 via
+ *    OpenRouter) via tolerant extraction + automatic retry without the flag.
  */
 
 export interface BriefPriority {
@@ -49,6 +50,7 @@ export interface Brief {
   replies: BriefReply[];
   sources: { source: string; configured: boolean; ok: boolean; count: number; error?: string }[];
   inbox: SourceItem[];
+  needs_attention: number;
   model?: string;
   error?: string;
 }
@@ -84,18 +86,89 @@ async function writeCache(db: D1Database, brief: Brief): Promise<void> {
     .run();
 }
 
-const BRIEF_SYSTEM =
-  'You are CONDUCTOR, the executive function layer for the operator. You receive a raw digest of their real ' +
-  'work signals (Pumble team chat, Gmail personal inbox, Zoho company inbox). In ONE pass, produce their ' +
-  'executive brief as strict JSON. Rules: be ruthless about priority — only genuinely actionable items ' +
-  'become priorities (max 6). Ignore newsletters, notifications, and noise. Suggested replies only for ' +
-  'messages that clearly await the operator (max 3, ≤60 words each, their voice: warm, precise, outcome-driven). ' +
-  'Signals are patterns worth knowing, not tasks (max 4). Reference items by their [source:n] tag in source_ref. ' +
-  'Respond ONLY with JSON matching: {"headline": string (≤90 chars, the single most important thing), ' +
-  '"summary": string (≤80 words, the shape of the day), ' +
-  '"priorities": [{"title": string, "context": string, "urgency": "high"|"medium"|"low", "source_ref": string}], ' +
-  '"signals": [{"label": "Work"|"Market"|"Network"|"Ops", "title": string, "meta": string, "score": "NN%"}], ' +
-  '"replies": [{"to": string, "channel": "pumble"|"gmail"|"zoho", "re": string, "draft": string}]}';
+function briefSystem(s: Settings): string {
+  const name = s.OPERATOR_NAME?.trim() || 'the operator';
+  const ctx = s.OPERATOR_CONTEXT?.trim();
+  return (
+    `You are CONDUCTOR, the executive function layer for ${name}.` +
+    (ctx ? ` Operator context: ${ctx}.` : '') +
+    ' You receive a raw digest of their real work signals (Pumble team chat, Gmail personal inbox, Zoho company inbox). ' +
+    'Items flagged DM, MENTIONS-YOU, or ATTN(...) were pre-screened as likely needing the operator — weigh them heavily. ' +
+    'In ONE pass, produce their executive brief as strict JSON. Rules: be ruthless about priority — only genuinely actionable items ' +
+    'become priorities (max 6). Ignore newsletters, notifications, and noise. Suggested replies only for ' +
+    `messages that clearly await ${name} (max 3, ≤60 words each, their voice: warm, precise, outcome-driven). ` +
+    'Signals are patterns worth knowing, not tasks (max 4). Reference items by their [source:n] tag in source_ref. ' +
+    'Respond ONLY with JSON matching: {"headline": string (≤90 chars, the single most important thing), ' +
+    '"summary": string (≤80 words, the shape of the day), ' +
+    '"priorities": [{"title": string, "context": string, "urgency": "high"|"medium"|"low", "source_ref": string}], ' +
+    '"signals": [{"label": "Work"|"Market"|"Network"|"Ops", "title": string, "meta": string, "score": "NN%"}], ' +
+    '"replies": [{"to": string, "channel": "pumble"|"gmail"|"zoho", "re": string, "draft": string}]}'
+  );
+}
+
+/**
+ * Model-agnostic JSON extraction. Kimi K2 and other models sometimes wrap
+ * JSON in prose or code fences even when asked not to.
+ */
+export function extractJson(raw: string): any {
+  const cleaned = raw.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
+  try {
+    return JSON.parse(cleaned);
+  } catch {
+    /* fall through */
+  }
+  const start = cleaned.indexOf('{');
+  if (start === -1) throw new Error('No JSON object in model output');
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < cleaned.length; i++) {
+    const ch = cleaned[i];
+    if (esc) { esc = false; continue; }
+    if (ch === '\\') { esc = true; continue; }
+    if (ch === '"') inStr = !inStr;
+    if (inStr) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return JSON.parse(cleaned.slice(start, i + 1));
+    }
+  }
+  throw new Error('Unbalanced JSON in model output');
+}
+
+/** One OpenRouter chat call; retries without response_format if the model rejects it (Kimi-safe). */
+async function callModel(apiKey: string, model: string, system: string, user: string): Promise<string> {
+  const payload: Record<string, unknown> = {
+    model,
+    temperature: 0.2,
+    max_tokens: 1600,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ],
+  };
+  const attempt = async (withFormat: boolean) => {
+    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(withFormat ? { ...payload, response_format: { type: 'json_object' } } : payload),
+    });
+    const json = (await res.json()) as any;
+    if (!res.ok) throw new Error(json?.error?.message ?? `OpenRouter ${res.status}`);
+    return String(json.choices?.[0]?.message?.content ?? '');
+  };
+  try {
+    return await attempt(true);
+  } catch (e) {
+    const msg = (e as Error).message.toLowerCase();
+    // Some models (incl. certain Kimi/Moonshot routes) reject response_format — retry plain.
+    if (msg.includes('response_format') || msg.includes('json_object') || msg.includes('not supported')) {
+      return attempt(false);
+    }
+    throw e;
+  }
+}
 
 export async function runBrief(env: Env, opts: { force?: boolean } = {}): Promise<Brief> {
   const db = env.DB;
@@ -107,11 +180,19 @@ export async function runBrief(env: Env, opts: { force?: boolean } = {}): Promis
     if (cached) return cached;
   }
 
-  // 1) Parallel, zero-credit fetch of every configured source.
-  const results = await fetchAllSources(db, settings);
+  // 1) Parallel, zero-credit fetch with identity resolution.
+  const { results, people } = await fetchAllSources(db, settings);
   const inbox = results.flatMap((r) => r.items);
+  const needsAttention = inbox.filter((i) => i.needsAttention).length;
   const anyConfigured = results.some((r) => r.configured);
   const digest = digestForPrompt(results);
+
+  // 2) Persist people + items durably (identity layer + system of record).
+  try {
+    await persistPass(db, results, people);
+  } catch {
+    /* tables may not exist before migration — non-fatal */
+  }
 
   const base: Brief = {
     generated_at: Date.now(),
@@ -123,6 +204,7 @@ export async function runBrief(env: Env, opts: { force?: boolean } = {}): Promis
     replies: [],
     sources: sourceMeta(results),
     inbox,
+    needs_attention: needsAttention,
   };
 
   if (!anyConfigured) {
@@ -154,37 +236,23 @@ export async function runBrief(env: Env, opts: { force?: boolean } = {}): Promis
   if (!settings.OPENROUTER_API_KEY) {
     const brief = {
       ...base,
-      headline: `${inbox.length} items pulled — add an OpenRouter key to triage them`,
-      summary: 'Sources are live and the unified inbox below is real. Set OPENROUTER_API_KEY in Sources to enable the one-shot triage pass.',
+      headline: `${inbox.length} items pulled (${needsAttention} need you) — add a model key to triage`,
+      summary: 'Sources are live and the unified inbox is real. Set OPENROUTER_API_KEY in Sources to enable the one-shot triage pass.',
     };
     await writeCache(db, brief);
     return brief;
   }
 
-  // 2) The single LLM call.
+  // 3) The single LLM call.
   const model = settings.OPENROUTER_MODEL || 'anthropic/claude-3.5-sonnet';
   try {
-    const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${settings.OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.2,
-        max_tokens: 1400,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: BRIEF_SYSTEM },
-          { role: 'user', content: `Today: ${new Date().toUTCString()}\n\nDIGEST:\n${digest}` },
-        ],
-      }),
-    });
-    const json = (await res.json()) as any;
-    if (!res.ok) throw new Error(json?.error?.message ?? `OpenRouter ${res.status}`);
-    const raw: string = json.choices?.[0]?.message?.content ?? '{}';
-    const parsed = JSON.parse(raw.replace(/^```(?:json)?\s*|\s*```$/g, ''));
+    const raw = await callModel(
+      settings.OPENROUTER_API_KEY,
+      model,
+      briefSystem(settings),
+      `Today: ${new Date().toUTCString()}\n\nDIGEST:\n${digest}`,
+    );
+    const parsed = extractJson(raw);
 
     const brief: Brief = {
       ...base,
@@ -196,7 +264,6 @@ export async function runBrief(env: Env, opts: { force?: boolean } = {}): Promis
       replies: Array.isArray(parsed.replies) ? parsed.replies.slice(0, 3) : [],
     };
 
-    // 3) Persist outputs so the rest of the system (tasks, memory) stays in sync.
     await persistBrief(db, brief);
     await writeCache(db, brief);
     return brief;
@@ -212,7 +279,6 @@ export async function runBrief(env: Env, opts: { force?: boolean } = {}): Promis
 }
 
 async function persistBrief(db: D1Database, brief: Brief): Promise<void> {
-  // De-dup: don't recreate tasks that already exist with the same title and are open.
   const { results } = await db.prepare('SELECT title FROM tasks WHERE done = 0').all<{ title: string }>();
   const existing = new Set((results ?? []).map((r) => r.title.toLowerCase()));
   for (const p of brief.priorities) {
@@ -222,5 +288,5 @@ async function persistBrief(db: D1Database, brief: Brief): Promise<void> {
   if (brief.headline) {
     await logMemory(db, `Brief: ${brief.headline}`, 'ATLAS', 'one-shot brief');
   }
-  await logAgentRun(db, 'CONDUCTOR', 'one_shot_brief', `${brief.priorities.length} priorities, ${brief.replies.length} drafts`);
+  await logAgentRun(db, 'CONDUCTOR', 'one_shot_brief', `${brief.priorities.length} priorities, ${brief.replies.length} drafts, ${brief.needs_attention} flagged`);
 }

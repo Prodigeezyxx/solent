@@ -19,6 +19,7 @@ interface SimNode extends GraphNode {
 const TYPE_STYLE: Record<GraphNodeType, { color: string; label: string }> = {
   hub: { color: '#e5e7eb', label: 'Hub' },
   source: { color: '#7CFFB2', label: 'Sources' },
+  channel: { color: '#4ade80', label: 'Channels' },
   person: { color: '#fb923c', label: 'People' },
   message: { color: '#64748b', label: 'Messages' },
   task: { color: '#38bdf8', label: 'Priorities' },
@@ -296,7 +297,13 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
                   onClick={() => setSelected(n)}
                 >
                   {(isSel || n.type === 'hub') && <circle r={r + 5} fill="none" stroke={style.color} strokeOpacity={0.4} strokeWidth={1.5} />}
-                  <circle r={r} fill={style.color} fillOpacity={n.type === 'message' ? 0.35 : 0.22} stroke={style.color} strokeWidth={1.4} />
+                  {n.attention && (
+                    <circle r={r + 4} fill="none" stroke="#f87171" strokeOpacity={0.75} strokeWidth={1.3}>
+                      <animate attributeName="r" values={`${r + 3};${r + 7};${r + 3}`} dur="2.2s" repeatCount="indefinite" />
+                      <animate attributeName="stroke-opacity" values="0.75;0.15;0.75" dur="2.2s" repeatCount="indefinite" />
+                    </circle>
+                  )}
+                  <circle r={r} fill={style.color} fillOpacity={n.type === 'message' ? 0.35 : 0.22} stroke={n.attention ? '#f87171' : style.color} strokeWidth={1.4} />
                   {n.type !== 'message' && (
                     <text
                       y={r + 11}

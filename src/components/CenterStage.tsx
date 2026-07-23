@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import {
   Mic, Terminal, ChevronRight, Hash, Send, Target, Clock3, Radio, Gauge,
   Check, CheckCircle2, Circle, Activity, TrendingUp, CalendarDays, Plus, ArrowRight,
-  Sparkles, Inbox, Users, Loader2, Plug, RefreshCw, Mail, MessageSquare, PenLine,
+  Sparkles, Inbox, Users, Loader2, Plug, RefreshCw, Mail, MessageSquare, PenLine, AlertTriangle, AtSign,
 } from 'lucide-react';
 import type { Mode, Task, Message } from '../types';
 import type { Brief, InboxItem } from '../lib/api';
@@ -246,6 +246,7 @@ function Dashboard({
   const connected = brief?.sources?.filter((s) => s.ok).length ?? 0;
   const inboxCount = brief?.inbox?.length ?? 0;
   const replyCount = brief?.replies?.length ?? 0;
+  const needsYou = brief?.needs_attention ?? brief?.inbox?.filter((i) => i.needsAttention).length ?? 0;
   return (
     <div className="w-full max-w-5xl mx-auto px-6 md:px-10 py-10">
       <div className="flex items-end justify-between gap-6 mb-4 flex-wrap">
@@ -285,7 +286,7 @@ function Dashboard({
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-px rounded-xl border border-nexus-border bg-nexus-border overflow-hidden mb-4">
-        <Metric icon={<Target className="w-4 h-4" />} color={'nexus-orange' as const} value={`${completed}`} sub={`/${tasks.length}`} label="Priorities complete" tag={tasks.length ? 'live' : 'empty'} />
+        <Metric icon={<AlertTriangle className="w-4 h-4" />} color={'nexus-orange' as const} value={`${needsYou}`} label="Needs you" tag={needsYou ? 'act now' : 'clear'} />
         <Metric icon={<Radio className="w-4 h-4" />} color={'nexus-purple' as const} value={`${inboxCount}`} label="Items in last pass" tag={brief ? 'scanned' : '—'} />
         <Metric icon={<Clock3 className="w-4 h-4" />} color={'nexus-blue' as const} value={`${replyCount}`} label="Replies drafted" tag={replyCount ? 'awaiting you' : '—'} />
         <Metric icon={<Gauge className="w-4 h-4" />} color={'nexus-mint' as const} value={`${connected}`} sub="/3" label="Sources connected" tag={connected ? 'online' : 'connect'} />
@@ -438,9 +439,13 @@ function ReceiveView({
 }: {
   brief: Brief | null; briefRunning: boolean; onRunBrief: () => void; onOpenSources: () => void; onSend: (text: string) => void;
 }) {
-  const [filter, setFilter] = useState<'all' | 'pumble' | 'gmail' | 'zoho'>('all');
-  const inbox: InboxItem[] = (brief?.inbox ?? []).filter((i) => filter === 'all' || i.source === filter);
+  const [filter, setFilter] = useState<'all' | 'attention' | 'pumble' | 'gmail' | 'zoho'>('all');
+  const inbox: InboxItem[] = (brief?.inbox ?? [])
+    .filter((i) => (filter === 'all' ? true : filter === 'attention' ? i.needsAttention : i.source === filter))
+    .slice()
+    .sort((a, b) => Number(!!b.needsAttention) - Number(!!a.needsAttention));
   const anyConfigured = brief?.sources?.some((s) => s.configured) ?? false;
+  const attnCount = (brief?.inbox ?? []).filter((i) => i.needsAttention).length;
 
   return (
     <div className="w-full max-w-4xl mx-auto px-6 md:px-10 py-10 pb-40">
@@ -488,7 +493,7 @@ function ReceiveView({
       )}
 
       <div className="flex items-center gap-1 mb-3">
-        {(['all', 'pumble', 'gmail', 'zoho'] as const).map((f) => (
+        {(['all', 'attention', 'pumble', 'gmail', 'zoho'] as const).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -496,7 +501,7 @@ function ReceiveView({
               filter === f ? 'bg-nexus-mint/10 text-nexus-mint' : 'text-nexus-dim hover:text-nexus-text'
             }`}
           >
-            {f}
+            {f === 'attention' ? `needs you${attnCount ? ` ${attnCount}` : ''}` : f}
           </button>
         ))}
         <span className="ml-auto text-[10px] font-mono text-nexus-dim">{inbox.length} items</span>
@@ -524,12 +529,18 @@ function ReceiveView({
           </div>
         )}
         {inbox.map((item, i) => (
-          <div key={`${item.source}-${item.ref}-${i}`} className="flex items-start gap-3 px-4 py-3 border-b border-nexus-border/40 last:border-0 hover:bg-white/[.02] transition-colors">
+          <div key={`${item.source}-${item.ref}-${i}`} className={`flex items-start gap-3 px-4 py-3 border-b border-nexus-border/40 last:border-0 hover:bg-white/[.02] transition-colors ${item.needsAttention ? 'bg-nexus-orange/[.03] border-l-2 border-l-nexus-orange/60' : ''}`}>
             <span className={`mt-0.5 w-6 h-6 rounded grid place-items-center shrink-0 ${SOURCE_TONE[item.source]}`}>{SOURCE_ICON[item.source]}</span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <strong className="text-[11px] font-medium text-zinc-300 truncate">{item.title}</strong>
-                <small className="text-[9px] font-mono text-nexus-dim truncate">{item.from}</small>
+                <strong className="text-[11px] font-medium text-zinc-300 truncate">{item.from}</strong>
+                {item.channel && <span className="px-1.5 py-0.5 rounded bg-nexus-border/60 text-[9px] font-mono text-nexus-dim">{item.channel}</span>}
+                {item.mentionsMe ? <span className="flex items-center gap-0.5 text-[9px] font-mono text-nexus-blue"><AtSign className="w-2.5 h-2.5" />you</span> : null}
+                {item.needsAttention ? (
+                  <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-nexus-orange/10 text-[9px] font-mono text-nexus-orange">
+                    <AlertTriangle className="w-2.5 h-2.5" />{item.attentionReason ?? 'needs you'}
+                  </span>
+                ) : null}
               </div>
               <p className="text-[11px] text-nexus-muted leading-relaxed mt-0.5 line-clamp-2">{item.text}</p>
             </div>

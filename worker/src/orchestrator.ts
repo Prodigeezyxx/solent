@@ -71,9 +71,11 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   },
 ];
 
-function buildSystem(liveContext: string): string {
+function buildSystem(liveContext: string, operatorName?: string, operatorContext?: string): string {
+  const who = operatorName?.trim() || 'the operator';
   return (
-    'You are CONDUCTOR, the orchestrator of NEXUS, an AI-native personal command centre for the operator. ' +
+    `You are CONDUCTOR, the orchestrator of NEXUS, an AI-native personal command centre for ${who}. ` +
+    (operatorContext?.trim() ? `Operator context: ${operatorContext.trim()}. ` : '') +
     'You have a council of specialist agents you can dispatch by calling tools. Choose the right agent for each job.\n\n' +
     'Available agents:\n' +
     agentListForPrompt() +
@@ -120,7 +122,7 @@ export async function orchestrate(
 
   const liveContext = await cachedBriefContext(env.DB);
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: 'system', content: buildSystem(liveContext) },
+    { role: 'system', content: buildSystem(liveContext, settings.OPERATOR_NAME, settings.OPERATOR_CONTEXT) },
     ...history.map((m) => ({
       role: m.role === 'agent' ? ('assistant' as const) : (m.role as 'user' | 'assistant' | 'system'),
       content: m.agent ? `[${m.agent}] ${m.content}` : m.content,

@@ -24,6 +24,9 @@ export const SETTING_KEYS = [
   // LLM
   'OPENROUTER_API_KEY',
   'OPENROUTER_MODEL',
+  // Operator identity — personalises prompts and attention detection
+  'OPERATOR_NAME',
+  'OPERATOR_CONTEXT', // e.g. "Founder of Floats XR and realmspace; priorities: GTM partnerships, product velocity"
   // Behaviour
   'BRIEF_TTL_MINUTES', // cache window for the one-shot brief (default 30)
 ] as const;

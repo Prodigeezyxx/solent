@@ -13,7 +13,13 @@ NEXUS is your **second executive-function layer**: it connects your real work so
 ## Completed features
 
 - **One-shot executive brief** — `POST /api/brief` pulls all sources → one LLM call → priorities persisted as tasks in D1
-- **Pumble connector** — official API-Keys addon; scans channels (optionally restricted via `PUMBLE_CHANNELS`)
+- **Identity layer** — Pumble workspace directory (`/listUsers` + `/myInfo`) cached 24h in D1; every message shows a **real human name**, `<@mention>` tokens are expanded to `@Name`, and NEXUS knows who *you* are
+- **Attention engine (zero-LLM)** — deterministic heuristics flag DMs, @mentions of you, direct asks/questions, and urgency keywords → `needs you` badges, a durable attention queue (`GET /api/attention`), and "Needs you" as the first dashboard metric
+- **Durable inbox** — every pass upserts people + items into D1 (`people`, `items` tables), so the graph and attention queue survive cache expiry
+- **Kimi / model-agnostic** — `response_format` fallback retry + tolerant balanced-brace JSON extraction; set `OPENROUTER_MODEL` to `moonshotai/kimi-k2` (or any slug) and it just works
+- **Operator personalization** — set your name + context in Sources; the brief and CONDUCTOR address you and weigh what matters to a founder
+- **Morning auto-brief** — Cron Trigger (weekdays 06:30 UTC) runs the pass before you open the app
+- **Pumble connector** — official API-Keys addon; scans public channels **and DMs** (optionally restricted via `PUMBLE_CHANNELS`), skips your own messages
 - **Gmail connector** — OAuth2 refresh-token flow; inbox metadata + snippets, promotions/social filtered out
 - **Zoho Mail connector** — OAuth2 refresh-token flow; auto-discovers account id, multi-DC support
 - **Sources panel in the UI** — connect/rotate all credentials at runtime (stored in D1, write-only; env vars as fallback)
@@ -33,6 +39,8 @@ NEXUS is your **second executive-function layer**: it connects your real work so
 | `GET /api/health` | Service health |
 | `GET /api/brief` | Cached brief (zero-credit read path) |
 | `GET /api/graph` | Knowledge graph nodes + edges (zero-credit) |
+| `GET /api/attention` | Unseen items flagged by the attention engine (zero-credit) |
+| `POST /api/attention/:id/seen` | Dismiss an attention item |
 | `POST /api/brief?force=1` | Run the one-shot pass now (one model call) |
 | `GET/POST /api/settings` | Connector credentials (secrets write-only, never echoed) |
 | `GET /api/state` | Tasks + memories snapshot |
@@ -72,5 +80,6 @@ Cloudflare Workers with static assets: `cd worker && npx wrangler deploy` (set a
 ## Recommended next steps
 
 - Send path: post approved drafts back through Pumble `sendMessage` and Gmail/Zoho send scopes
-- Scheduled runs: a Cron Trigger calling `runBrief` each morning so the day is triaged before you open the app
-- Per-item done/dismiss state on the unified inbox
+- Per-item done/dismiss state wired into the unified inbox UI (API already exists)
+- Relationship staleness: surface people you haven't spoken to in N days
+- Weekly digest: one extra LLM call summarising the week's decisions + open threads

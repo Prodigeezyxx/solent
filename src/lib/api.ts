@@ -80,10 +80,16 @@ export async function fetchTasks(): Promise<Task[]> {
 export interface InboxItem {
   source: 'pumble' | 'gmail' | 'zoho';
   ref: string;
+  channel?: string;
   from: string;
+  fromId?: string;
   title: string;
   text: string;
   ts: string;
+  isDm?: boolean;
+  mentionsMe?: boolean;
+  needsAttention?: boolean;
+  attentionReason?: string;
 }
 
 export interface BriefSourceMeta {
@@ -104,6 +110,7 @@ export interface Brief {
   replies: { to: string; channel: string; re: string; draft: string }[];
   sources: BriefSourceMeta[];
   inbox: InboxItem[];
+  needs_attention?: number;
   model?: string;
   error?: string;
 }
@@ -125,7 +132,7 @@ export async function runBriefNow(): Promise<Brief> {
 // ---- Knowledge graph -------------------------------------------------------
 
 export type GraphNodeType =
-  | 'hub' | 'source' | 'person' | 'message' | 'task' | 'signal' | 'draft' | 'memory' | 'decision';
+  | 'hub' | 'source' | 'channel' | 'person' | 'message' | 'task' | 'signal' | 'draft' | 'memory' | 'decision';
 
 export interface GraphNode {
   id: string;
@@ -133,6 +140,7 @@ export interface GraphNode {
   label: string;
   detail?: string;
   weight: number;
+  attention?: boolean;
 }
 
 export interface GraphEdge {
@@ -153,6 +161,33 @@ export async function fetchGraph(): Promise<GraphData> {
   const res = await fetch('/api/graph');
   if (!res.ok) throw new Error(`graph failed (${res.status})`);
   return (await res.json()) as GraphData;
+}
+
+// ---- Attention queue --------------------------------------------------------
+
+export interface AttentionItem {
+  id: number;
+  source: string;
+  channel: string | null;
+  from_name: string;
+  title: string;
+  text: string;
+  ts: string | null;
+  is_dm: number;
+  mentions_me: number;
+  attention_reason: string | null;
+}
+
+/** Pure D1 read — zero credits. Unseen items flagged by the attention engine. */
+export async function fetchAttention(): Promise<AttentionItem[]> {
+  const res = await fetch('/api/attention');
+  if (!res.ok) throw new Error(`attention failed (${res.status})`);
+  const json = (await res.json()) as { items: AttentionItem[] };
+  return json.items;
+}
+
+export async function markSeen(id: number): Promise<void> {
+  await fetch(`/api/attention/${id}/seen`, { method: 'POST' });
 }
 
 // ---- Settings / sources ---------------------------------------------------
