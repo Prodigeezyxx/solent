@@ -396,7 +396,7 @@ function prettifyLocalPart(local: string): string {
 export async function fetchGmail(
   db: D1Database,
   s: Settings,
-  max = 40,
+  max = 50,
 ): Promise<{ result: SourceResult; people: PersonRecord[] }> {
   if (!s.GMAIL_CLIENT_ID || !s.GMAIL_CLIENT_SECRET || !s.GMAIL_REFRESH_TOKEN) {
     return { result: { source: 'gmail', ok: false, configured: false, items: [] }, people: [] };
@@ -407,13 +407,34 @@ export async function fetchGmail(
     // Lookback window: default 14 days, tunable via SOURCE_LOOKBACK_DAYS.
     // Older items already persisted in D1 stay; each pass extends the record.
     const lookback = Math.max(1, Math.min(60, Number(s.SOURCE_LOOKBACK_DAYS ?? 14)));
-    const listRes = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(`in:inbox newer_than:${lookback}d -category:promotions -category:social`)}&maxResults=${max}`,
-      { headers: auth },
-    );
-    const list = await safeJson(listRes);
-    if (!listRes.ok) throw new Error(`Gmail list failed: ${list.error?.message ?? listRes.status}`);
-    const ids: string[] = (list.messages ?? []).map((m: any) => m.id);
+
+    /**
+     * TRIPLE-QUERY COVERAGE. A busy inbox can hold hundreds of messages
+     * inside the lookback window — a single recency-capped list silently
+     * drops the older ones, which is exactly where week-old high-value
+     * threads live (starred intros were dropped this way once).
+     *   A) newest mail (recency) — the live pulse
+     *   B) is:starred — the operator's OWN deliberate priority mark, tiny
+     *      and pure; every starred message in the window ALWAYS gets a seat.
+     *      (Kept separate from is:important, which Gmail sprays on bots/OTPs
+     *      — combined, the junk crowded the stars out of the result cap.)
+     *   C) is:important — Gmail's signal, small cap, better than nothing
+     */
+    const listQuery = async (q: string, n: number): Promise<string[]> => {
+      const r = await fetch(
+        `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=${n}`,
+        { headers: auth },
+      );
+      const j = await safeJson(r);
+      if (!r.ok) throw new Error(`Gmail list failed: ${j.error?.message ?? r.status}`);
+      return (j.messages ?? []).map((m: any) => String(m.id));
+    };
+    const [recentIds, starredIds, importantIds] = await Promise.all([
+      listQuery(`in:inbox newer_than:${lookback}d -category:promotions -category:social`, max),
+      listQuery(`in:inbox is:starred newer_than:${lookback}d`, 25),
+      listQuery(`in:inbox is:important newer_than:${lookback}d -category:promotions -category:social -from:noreply -from:notifications`, 15),
+    ]);
+    const ids = [...new Set([...starredIds, ...recentIds, ...importantIds])];
     const people = new Map<string, PersonRecord>();
 
     const items = await Promise.all(
@@ -428,6 +449,9 @@ export async function fetchGmail(
           (m.payload?.headers ?? []).find((x: any) => x.name?.toLowerCase() === name)?.value ?? '';
         const addr = parseAddress(h('from'));
         if (addr.email) people.set(addr.email, { source: 'gmail', extId: addr.email, name: addr.name, email: addr.email });
+        const labels: string[] = m.labelIds ?? [];
+        const starred = labels.includes('STARRED');
+        const important = labels.includes('IMPORTANT');
         const base = {
           source: 'gmail' as const,
           ref: id,
@@ -440,7 +464,17 @@ export async function fetchGmail(
           isDm: true, // email to you is inherently direct
           mentionsMe: false,
         };
-        return { ...base, ...scoreAttention(base, s.OPERATOR_NAME) };
+        const scored = scoreAttention(base, s.OPERATOR_NAME);
+        // Gmail's own priority signals outrank our heuristics: starred mail
+        // is a deliberate act by the operator — always attention-worthy.
+        if (starred) {
+          const reason = ['starred by you', scored.attentionReason].filter(Boolean).join(' + ');
+          return { ...base, needsAttention: true, attentionReason: clip(reason, 60) };
+        }
+        if (important && scored.needsAttention) {
+          return { ...base, needsAttention: true, attentionReason: clip(`gmail-important + ${scored.attentionReason}`, 60) };
+        }
+        return { ...base, ...scored };
       }),
     );
     return {
