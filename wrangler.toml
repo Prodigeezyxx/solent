@@ -12,11 +12,12 @@ directory = "dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 
-# D1 database — id is rewritten by the managed deploy pipeline.
+# D1 database — the managed hosted deploy provisions this database; name/id
+# below are the managed values it created for this project.
 [[d1_databases]]
 binding = "DB"
-database_name = "solent-db"
-database_id = "REPLACE_WITH_YOUR_D1_ID"
+database_name = "43b829ba-c819-41c0-947c-aaa05f671d04-db"
+database_id = "bbf99890-8c97-416a-8685-1621cdddbf34"
 migrations_dir = "worker/migrations"
 
 [vars]
