@@ -1,0 +1,24 @@
+{
+  // SOLENT Command Centre — root config for the managed hosted deploy pipeline.
+  // Local dev keeps using worker/wrangler.toml (cd worker && wrangler dev).
+  "name": "solent-worker",
+  "main": "worker/src/index.ts",
+  "compatibility_date": "2024-11-06",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "43b829ba-c819-41c0-947c-aaa05f671d04-db",
+      "database_id": "bbf99890-8c97-416a-8685-1621cdddbf34",
+      "migrations_dir": "worker/migrations"
+    }
+  ],
+  "vars": {
+    "OPENROUTER_MODEL": "moonshotai/kimi-k3"
+  }
+}

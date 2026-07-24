@@ -15,11 +15,12 @@ not_found_handling = "single-page-application"
 # [triggers]
 # crons = ["30 6 * * 1-5"]
 
-# D1 database binding (created via: wrangler d1 create solent-db)
+# D1 database binding — managed database provisioned by the hosted deploy.
+# (Local dev uses miniflare local state; the name/id only matter for deploys.)
 [[d1_databases]]
 binding = "DB"
-database_name = "solent-db"
-database_id = "REPLACE_WITH_YOUR_D1_ID"
+database_name = "43b829ba-c819-41c0-947c-aaa05f671d04-db"
+database_id = "bbf99890-8c97-416a-8685-1621cdddbf34"
 migrations_dir = "migrations"
 
 # Secrets (set via: wrangler secret put OPENROUTER_API_KEY)
