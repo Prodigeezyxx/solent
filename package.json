@@ -8,7 +8,11 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "setup": "npm install && cd worker && npm install && npx wrangler d1 migrations apply solent-db --local",
+    "start": "npm run build && cd worker && npx wrangler dev --port 3000",
+    "db:export": "./scripts/db-export.sh",
+    "db:import": "./scripts/db-import.sh"
   },
   "dependencies": {
     "lucide-react": "^0.546.0",

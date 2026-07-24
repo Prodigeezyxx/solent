@@ -76,16 +76,38 @@ SOLENT is your **second executive-function layer**: it connects your real work s
 
 Credentials can also be provided as Worker secrets (`wrangler secret put PUMBLE_API_KEY` etc.); values saved in the UI take precedence.
 
-## Local use
+## Local use (your own machine)
 
 ```bash
-npm install && npm run build          # build the UI
-cd worker && npm install
-npx wrangler d1 migrations apply solent-db --local
-npx wrangler dev --port 3000          # serves API + UI together
+git clone https://github.com/Prodigeezyxx/solent && cd solent
+npm run setup                          # installs everything + creates local D1
+npm run db:import solent_db_export_YYYY-MM-DD.sql   # ← restores ALL data + credentials
+npm run start                          # build UI + serve full app at http://localhost:3000
 ```
 
 In the sandbox: `pm2 start ecosystem.config.cjs`.
+
+### Moving your data between machines (credentials never touch git)
+
+Credentials and data live in the D1 database, **not** in the repo — pushing
+them to GitHub would expose your Gmail/Zoho/Pumble tokens to anyone who sees
+it. Instead, carry the database file itself:
+
+```bash
+npm run db:export        # → solent_db_export_YYYY-MM-DD.sql (gitignored, contains secrets)
+# move that ONE file privately (AI Drive, USB, scp — never git), then on the other machine:
+npm run db:import solent_db_export_YYYY-MM-DD.sql
+```
+
+The export is the complete state: settings, OAuth tokens, every message,
+task, memory, decision, person, triage state, and spend ledger. One import
+and the app is exactly as you left it — no reconnecting sources.
+
+To push the same state into a **deployed** Worker's remote D1:
+
+```bash
+cd worker && npx wrangler d1 execute solent-db --remote --file=../solent_db_export_YYYY-MM-DD.sql
+```
 
 ## Data architecture
 
