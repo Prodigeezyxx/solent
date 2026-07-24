@@ -15,6 +15,39 @@ import type { Brief } from './brief';
 
 const KEEP_UNPINNED = 40;
 
+/**
+ * SELF-HEALING SCHEMA — the hosted D1 can't always take out-of-band DDL
+ * (approval prompts may not surface), so the worker guarantees its own
+ * table. CREATE TABLE IF NOT EXISTS is idempotent and cheap; we still only
+ * run it once per isolate.
+ */
+let ensured = false;
+export async function ensureSnapshotTable(db: D1Database): Promise<void> {
+  if (ensured) return;
+  await db.batch([
+    db.prepare(
+      `CREATE TABLE IF NOT EXISTS brief_snapshots (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        generated_at INTEGER NOT NULL,
+        headline TEXT NOT NULL DEFAULT '',
+        summary TEXT NOT NULL DEFAULT '',
+        model TEXT,
+        priorities_count INTEGER NOT NULL DEFAULT 0,
+        replies_count INTEGER NOT NULL DEFAULT 0,
+        needs_attention INTEGER NOT NULL DEFAULT 0,
+        inbox_count INTEGER NOT NULL DEFAULT 0,
+        payload TEXT NOT NULL,
+        pinned INTEGER NOT NULL DEFAULT 0,
+        label TEXT,
+        created_at INTEGER NOT NULL
+      )`,
+    ),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_snapshots_time ON brief_snapshots (generated_at DESC)'),
+    db.prepare('CREATE INDEX IF NOT EXISTS idx_snapshots_pinned ON brief_snapshots (pinned, generated_at DESC)'),
+  ]);
+  ensured = true;
+}
+
 export interface SnapshotMeta {
   id: number;
   generated_at: number;
@@ -32,6 +65,7 @@ export interface SnapshotMeta {
 
 /** Auto-save a brief state. Called on every LLM pass — never blocks the brief. */
 export async function saveSnapshot(db: D1Database, brief: Brief): Promise<void> {
+  await ensureSnapshotTable(db);
   await db
     .prepare(
       `INSERT INTO brief_snapshots
@@ -64,6 +98,7 @@ export async function saveSnapshot(db: D1Database, brief: Brief): Promise<void> 
 
 /** List snapshot metadata, newest first (payload excluded — it can be large). */
 export async function listSnapshots(db: D1Database, limit = 30): Promise<SnapshotMeta[]> {
+  await ensureSnapshotTable(db);
   const { results } = await db
     .prepare(
       `SELECT id, generated_at, headline, summary, model, priorities_count, replies_count,
