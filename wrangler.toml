@@ -1,0 +1,24 @@
+# SOLENT Command Centre — root wrangler config for the hosted deploy pipeline
+# (which builds from the repo root). Mirrors worker/wrangler.toml with paths
+# adjusted; for local dev keep using `cd worker && wrangler dev` (pm2).
+name = "solent-worker"
+main = "worker/src/index.ts"
+compatibility_date = "2024-11-06"
+compatibility_flags = ["nodejs_compat"]
+
+# Serve the built React app from the same Worker — one process, one deploy.
+[assets]
+directory = "dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+# D1 database — id is rewritten by the managed deploy pipeline.
+[[d1_databases]]
+binding = "DB"
+database_name = "solent-db"
+database_id = "REPLACE_WITH_YOUR_D1_ID"
+migrations_dir = "worker/migrations"
+
+[vars]
+# Default model; overridable at runtime from Sources → Model picker.
+OPENROUTER_MODEL = "moonshotai/kimi-k3"
