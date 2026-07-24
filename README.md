@@ -1,13 +1,15 @@
 # SOLENT Command Centre
 
-SOLENT is your **second executive-function layer**: it connects your real work sources — **Pumble** (team chat), **Gmail** (personal), and **Zoho Mail** (company) — pulls everything in **one shot**, triages it with a **single model call**, and turns it into priorities, signals, and drafted replies.
+SOLENT is your **second executive-function layer**: it connects your real work sources — **Pumble** (team chat), **Gmail** (personal), **Zoho Mail** (company), and **Google Calendar** (schedule) — pulls everything in **one shot**, triages it with a **single model call**, and turns it into priorities, signals, and drafted replies.
+
+**Production (managed Cloudflare, daily driver):** https://43b829ba-c819-41c0-947c-aaa05f671d04.vip.gensparksite.com
 
 ## How the one-shot pass works (credit optimisation)
 
-1. **Fetch (zero credits).** Pumble channels, Gmail inbox (metadata + snippets), and Zoho Mail are pulled **in parallel** over plain HTTP.
-2. **Condense before prompting.** Items are HTML-stripped, clipped to ≤280 chars, and capped at ~40 items — keeping the prompt a few thousand tokens.
+1. **Fetch (zero credits).** Pumble channels, Gmail inbox (metadata + snippets), Zoho Mail, and Google Calendar (week-ahead events) are pulled **in parallel** over plain HTTP.
+2. **Condense before prompting.** Items are HTML-stripped, clipped to ≤280 chars, and capped — keeping the prompt a few thousand tokens.
 3. **Exactly ONE model call.** No agent loops, no tool rounds. One structured-JSON response contains the headline, summary, priorities, signals, and reply drafts.
-4. **Cache.** The brief is cached in D1 (default 30 min, configurable). Reopening the dashboard inside the window costs **zero credits**. Empty inboxes never trigger a model call at all.
+4. **Cache the ANALYSIS, never the INBOX.** The LLM output is cached in D1 (default 30 min, `BRIEF_TTL_MINUTES`). But inside that window, whenever the cached sources are older than `BRIEF_FRESHNESS_MINUTES` (default 3), a **zero-LLM stale-while-revalidate pass** re-pulls all sources, persists new items, and merges the fresh inbox into the cached brief — so a new email is never invisible for more than ~3 minutes, at zero credit cost. The frontend also re-polls every 3 min and on tab refocus.
 5. **Free context reuse.** The CONDUCTOR chat injects the cached brief into its system prompt for free — no extra pulls.
 
 ## Completed features
@@ -24,8 +26,11 @@ SOLENT is your **second executive-function layer**: it connects your real work s
 - **Context library** — paste docs/memos/notes in Sources (or just paste into chat — CONDUCTOR saves them via `save_context_doc`); injected compactly as ground truth into every brief and chat, no extra model calls
 - **Model picker** — curated frontier presets (Kimi K3, Kimi K2.6, Claude 3.5 Sonnet, DeepSeek V3/R1, Gemini 2.5 Flash, Qwen3 235B) plus any custom OpenRouter slug, and a reasoning-effort selector (off/low/medium/high) that degrades gracefully on models without reasoning support
 - **Pumble connector** — official API-Keys addon; scans public channels **and DMs** (optionally restricted via `PUMBLE_CHANNELS`), skips your own messages
-- **Gmail connector** — OAuth2 refresh-token flow; inbox metadata + snippets, promotions/social filtered out
+- **Gmail connector** — OAuth2 refresh-token flow; inbox metadata + snippets, promotions/social filtered out, 14-day lookback (`SOURCE_LOOKBACK_DAYS`, max 60)
 - **Zoho Mail connector** — OAuth2 refresh-token flow; auto-discovers account id, multi-DC support
+- **Google Calendar connector (`gcal`)** — reuses the Gmail OAuth client (needs `calendar.readonly` scope on the refresh token); week-ahead events with full context: times, attendees, location, Meet links, RSVP state. Flags “starts soon / today / awaiting your RSVP”; the brief prompt is calendar-aware (conflicts, meeting prep). Shows an actionable “scope missing” note until the token has the scope — nothing else breaks
+- **Universal triage** — every prompt/message/notice system-wide can be marked **sorted** or **deferred** (with wake time); deferred items re-surface automatically; overlay endpoint lets every view hide handled items
+- **Live inbox freshness** — zero-LLM stale-while-revalidate (see “How the one-shot pass works”): a new email can never sit invisible behind the brief cache
 - **Sources panel in the UI** — connect/rotate all credentials at runtime (stored in D1, write-only; env vars as fallback)
 - **Unified RECEIVE inbox** — all three sources merged, filterable, with per-item "reply →" handoff to CONDUCTOR
 - **HERMES reply drafts** — the brief proposes ≤3 replies for messages awaiting you; refine them in the chat thread
@@ -49,6 +54,11 @@ SOLENT is your **second executive-function layer**: it connects your real work s
 | `GET /api/graph` | Knowledge graph nodes + edges (zero-credit) |
 | `GET /api/attention` | Unseen items flagged by the attention engine (zero-credit) |
 | `POST /api/attention/:id/seen` | Dismiss an attention item |
+| `POST /api/triage/item/:id` | Mark an item sorted / deferred / reopened |
+| `POST /api/triage/ref` | Same, addressed by `{source, ref}` (for brief inbox items) |
+| `GET /api/triage/overlay` | `source:ref → triage state` map so views hide handled items |
+| `GET /api/triage/deferred` | Deferred items and their wake times |
+| `POST /api/tasks/:id/defer\|undefer` | Snooze / restore a task |
 | `GET /api/loops` | Open loops — commitments in flight (zero-credit) |
 | `POST /api/loops/:id/resolve\|dismiss` | Close a loop |
 | `GET /api/items/:id/context` | Full context for one item: person, history, loops, flag reason |
@@ -70,7 +80,7 @@ SOLENT is your **second executive-function layer**: it connects your real work s
 ## Connecting your sources (once, from the UI → "sources" chip)
 
 - **Pumble:** install the *API Keys* addon in Pumble → generate key → paste. Optional: limit channels (`general, product`).
-- **Gmail:** Google Cloud project → enable Gmail API → OAuth client (scope `gmail.readonly`) → obtain a refresh token → paste client id/secret/refresh token.
+- **Gmail + Google Calendar:** Google Cloud project → enable Gmail API **and Calendar API** → OAuth client → obtain a refresh token with **both scopes**: `https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/calendar.readonly` → paste client id/secret/refresh token. (Token minted with only `gmail.readonly`? Mail still works; Calendar shows a scope note until you re-mint with both — same client id/secret, just re-run the consent flow.)
 - **Zoho Mail:** [Zoho API console](https://api-console.zoho.com) → Self Client → scopes `ZohoMail.messages.READ,ZohoMail.accounts.READ` → generate refresh token. Set data centre (`com`, `eu`, `in`, …) if not US.
 - **Model:** OpenRouter API key. Default model is configurable; a cheap/free model works — the pass needs only one JSON completion.
 
@@ -117,11 +127,20 @@ cd worker && npx wrangler d1 execute solent-db --remote --file=../solent_db_expo
 
 ## Deployment
 
-Cloudflare Workers with static assets: `cd worker && npx wrangler deploy` (set a real `database_id` in `wrangler.toml` and run remote migrations first).
+**Current production** runs on a Genspark-managed Cloudflare account (Workers for Platforms): https://43b829ba-c819-41c0-947c-aaa05f671d04.vip.gensparksite.com — deployed from the root `wrangler.jsonc` (managed D1 name/id pinned there; the config's `build.command` rebuilds `dist/` in the pipeline). 100% of data + credentials were migrated into the hosted D1. Note: cron triggers are **not supported** on Workers for Platforms, so the morning auto-brief is disabled there.
 
-## Recommended next steps
+**Self-hosting on your own Cloudflare account** (planned): use the prepared `env.selfhost` block in `wrangler.jsonc` — create your own D1, replace `REPLACE_WITH_YOUR_OWN_D1_ID`, run remote migrations, then `npx wrangler deploy --env selfhost`. The cron auto-brief (`30 6 * * 1-5`) is re-enabled in that env. Migrate data with `npm run db:export` → `wrangler d1 execute ... --remote --file=...`.
 
+## Current state & next steps (session log 2026-07-24)
+
+**Done this session:** universal triage system-wide · 14-day Gmail lookback · unshackled brief (10 priorities / 5 replies / 6 signals) · responsive graph canvas · portable DB export/import (`npm run db:export` / `db:import`) · deployed to managed Cloudflare with full data migration · **zero-LLM inbox freshness fix** (root cause of the “missing Zoho email”: 30-min brief cache + mount-only frontend fetch — fetch code was always correct) · **Google Calendar source** with full context · full production pass over every endpoint (all green).
+
+**Waiting on the operator:**
+- Re-mint the Google refresh token with `gmail.readonly` **+** `calendar.readonly` (same client id/secret) and paste it in Sources → Calendar goes live instantly, no redeploy
+- Weekend: fix own Cloudflare account (stale `nexus-worker` / assets-only `solent` deploys), then self-host via `--env selfhost`
+
+**Recommended next steps:**
 - Send path: post approved drafts back through Pumble `sendMessage` and Gmail/Zoho send scopes
-- Per-item done/dismiss state wired into the unified inbox UI (API already exists)
 - Relationship staleness: surface people you haven't spoken to in N days
 - Weekly digest: one extra LLM call summarising the week's decisions + open threads
+- Optional: access lock on the managed URL (currently public)
