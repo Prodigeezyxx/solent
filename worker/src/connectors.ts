@@ -69,6 +69,10 @@ const strip = (s: string) =>
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -88,17 +92,50 @@ async function safeJson(res: Response): Promise<any> {
 const URGENT_RE = /\b(urgent|asap|blocker|blocked|deadline|today|eod|critical|emergency|important|overdue|reminder)\b/i;
 const ASK_RE = /\b(can you|could you|please|need you|waiting on|thoughts\?|approve|review|sign.?off|confirm|wdyt|what do you think|any update|follow(ing)? up)\b/i;
 
-export function scoreAttention(item: Omit<SourceItem, 'needsAttention' | 'attentionReason'>): {
+// Marketing/newsletter detection — mass mail never "needs you" no matter how
+// urgent its copy sounds ("Don't miss!", "deadline today!").
+const MARKETING_ADDR_RE = /(no.?reply|noreply|newsletter|marketing|notifications?@|updates?@|news@|digest|mailer|campaigns?@|hello@|promo|billing@|do.?not.?reply)/i;
+const MARKETING_TEXT_RE = /\b(unsubscribe|view (this|in) browser|manage preferences|webinar|early.?bird|limited time|don.?t miss|register now|% off|free trial)\b/i;
+
+function isMassMail(item: { fromId?: string; from: string; title: string; text: string }): boolean {
+  return (
+    MARKETING_ADDR_RE.test(item.fromId ?? '') ||
+    MARKETING_ADDR_RE.test(item.from) ||
+    MARKETING_TEXT_RE.test(`${item.title} ${item.text}`)
+  );
+}
+
+export function scoreAttention(
+  item: Omit<SourceItem, 'needsAttention' | 'attentionReason'>,
+  operatorName?: string,
+): {
   needsAttention: boolean;
   attentionReason?: string;
 } {
-  const reasons: string[] = [];
-  if (item.isDm) reasons.push('direct message');
-  if (item.mentionsMe) reasons.push('mentions you');
+  const isEmail = item.source !== 'pumble';
+  // Newsletters/marketing: never attention-worthy, regardless of copy.
+  if (isEmail && isMassMail(item)) return { needsAttention: false };
+
   const text = `${item.title} ${item.text}`;
+  const namedYou =
+    !!operatorName?.trim() && new RegExp(`\\b${operatorName.trim().split(/\s+/)[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(text);
+
+  const reasons: string[] = [];
+  // "Direct message" is only meaningful in chat — every email is technically direct.
+  if (item.isDm && !isEmail) reasons.push('direct message');
+  if (item.mentionsMe) reasons.push('mentions you');
+  if (namedYou && isEmail) reasons.push('addressed to you by name');
   if (URGENT_RE.test(text)) reasons.push('urgency language');
   if (ASK_RE.test(text)) reasons.push('direct ask');
-  else if (item.text.includes('?') && (item.isDm || item.mentionsMe)) reasons.push('question to you');
+  else if (text.includes('?')) {
+    // A bare "?" only counts when it's plausibly aimed at YOU:
+    // chat DM/mention, or an email that names you personally.
+    if (!isEmail && (item.isDm || item.mentionsMe)) reasons.push('question to you');
+    else if (isEmail && namedYou) reasons.push('question to you');
+  }
+
+  // Email needs a human reason (name/ask/question/urgency), not mere existence.
+  if (isEmail && reasons.length === 0) return { needsAttention: false };
   return reasons.length
     ? { needsAttention: true, attentionReason: reasons.slice(0, 2).join(' + ') }
     : { needsAttention: false };
@@ -265,7 +302,7 @@ export async function fetchPumble(
             isDm,
             mentionsMe,
           };
-          items.push({ ...base, ...scoreAttention(base) });
+          items.push({ ...base, ...scoreAttention(base, s.OPERATOR_NAME) });
         }
       }),
     );
@@ -318,13 +355,35 @@ async function gmailAccessToken(db: D1Database, s: Settings): Promise<string> {
   return json.access_token as string;
 }
 
-/** "Jane Doe <jane@x.com>" → { name, email } */
+/** Decode entities WITHOUT stripping <angle brackets> — safe for address headers. */
+const decodeHeader = (s: string) =>
+  s
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d)))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/** "Jane Doe <jane@x.com>" → { name, email }. NEVER pre-strip() the input — it eats <addr>. */
 function parseAddress(raw: string): { name: string; email?: string } {
-  const m = raw.match(/^"?([^"<]+?)"?\s*<([^>]+)>$/);
+  const cleaned = decodeHeader(raw);
+  const m = cleaned.match(/^"?([^"<]+?)"?\s*<([^>]+)>$/);
   if (m) return { name: m[1].trim(), email: m[2].trim().toLowerCase() };
-  const email = raw.trim().toLowerCase();
-  if (email.includes('@')) return { name: email.split('@')[0], email };
-  return { name: raw.trim() || 'unknown' };
+  const email = cleaned.trim().toLowerCase();
+  if (email.includes('@')) return { name: prettifyLocalPart(email.split('@')[0]), email };
+  return { name: cleaned.trim() || 'unknown' };
+}
+
+/** "jane.doe" / "jane_doe1" → "Jane Doe" — humane fallback when only an address exists. */
+function prettifyLocalPart(local: string): string {
+  const words = local.replace(/[\d]+$/g, '').split(/[._\-+]+/).filter(Boolean);
+  if (!words.length) return local;
+  return words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
 }
 
 export async function fetchGmail(
@@ -357,7 +416,7 @@ export async function fetchGmail(
         const m = await safeJson(r);
         const h = (name: string) =>
           (m.payload?.headers ?? []).find((x: any) => x.name?.toLowerCase() === name)?.value ?? '';
-        const addr = parseAddress(strip(h('from')));
+        const addr = parseAddress(h('from'));
         if (addr.email) people.set(addr.email, { source: 'gmail', extId: addr.email, name: addr.name, email: addr.email });
         const base = {
           source: 'gmail' as const,
@@ -371,7 +430,7 @@ export async function fetchGmail(
           isDm: true, // email to you is inherently direct
           mentionsMe: false,
         };
-        return { ...base, ...scoreAttention(base) };
+        return { ...base, ...scoreAttention(base, s.OPERATOR_NAME) };
       }),
     );
     return {
@@ -444,7 +503,14 @@ export async function fetchZoho(
     if (!res.ok) throw new Error(`Zoho messages failed: ${json.data?.errorCode ?? res.status}`);
     const people = new Map<string, PersonRecord>();
     const items: SourceItem[] = (json.data ?? []).map((m: any) => {
-      const addr = parseAddress(strip(String(m.sender ?? m.fromAddress ?? '')));
+      // Zoho: `sender` is the display name, `fromAddress` the raw address.
+      const senderName = decodeHeader(String(m.sender ?? ''));
+      const fromAddr = String(m.fromAddress ?? '').trim().toLowerCase();
+      const parsed = parseAddress(fromAddr || senderName);
+      const addr = {
+        name: senderName && !senderName.includes('@') ? senderName : parsed.name,
+        email: parsed.email ?? (fromAddr.includes('@') ? fromAddr : undefined),
+      };
       if (addr.email) people.set(addr.email, { source: 'zoho', extId: addr.email, name: addr.name, email: addr.email });
       const base = {
         source: 'zoho' as const,
@@ -458,7 +524,7 @@ export async function fetchZoho(
         isDm: true,
         mentionsMe: false,
       };
-      return { ...base, ...scoreAttention(base) };
+      return { ...base, ...scoreAttention(base, s.OPERATOR_NAME) };
     });
     return { result: { source: 'zoho', ok: true, configured: true, items }, people: [...people.values()] };
   } catch (e) {
