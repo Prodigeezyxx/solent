@@ -30,7 +30,11 @@ SOLENT is your **second executive-function layer**: it connects your real work s
 - **Unified RECEIVE inbox** — all three sources merged, filterable, with per-item "reply →" handoff to CONDUCTOR
 - **HERMES reply drafts** — the brief proposes ≤3 replies for messages awaiting you; refine them in the chat thread
 - **Live dashboard** — headline, executive summary, source health chips, real task queue from D1
-- **Knowledge graph (GRAPH mode)** — interactive force-directed relationship tree: SOLENT → sources → people → messages → derived priorities, signals, drafts, logged notes and decisions. Drag nodes, zoom/pan, filter by type, click for a detail card with connections. Built from D1 with zero LLM cost (`GET /api/graph`)
+- **Knowledge graph (GRAPH mode)** — interactive relationship view over everything SOLENT knows, with **four layouts**: Web (force-directed), Orbit (concentric rings by type — attention pulls inward), People (person-centric columns grouped by source), and Timeline (items placed left→right by time). Fullscreen mode, drag/zoom/pan, type filters, detail cards. Built from D1 with zero LLM cost (`GET /api/graph`)
+- **Agent council → real feature panes** — every specialist is a full workspace, not a persona: click any agent in the left rail to open its pane with live D1 data + actions. ATLAS (priority queue + oldest loops + add task), SCRIBE (memory log + add), ORACLE (signal radar + per-source volume), HERMES (drafts to copy + messages awaiting reply), HUNTER (GTM signals + external orbit), MUSE (content bank), VAULT (context library + add doc), FORGE (build queue + technical decisions), LEDGER (model spend + live OpenRouter credit), CIRCLE (relationship CRM with VIP starring), JUDGE (decision journal + log form), GHOST (private notes). All pane reads are zero-credit (`GET /api/agents/:id/pane`)
+- **Agent-direct chat** — each pane has a direct line to that specialist: it answers in its own voice with the full shared tool belt (capture task, log memory/decision, resolve loop, save doc). `POST /api/chat` with `{agent}`
+- **Manual task capture** — add tasks by hand from the dashboard queue (+ Add) or the ATLAS/FORGE panes; delete from panes too
+- **Credit accounting** — every model call is recorded in D1 (`llm_usage`: tokens + exact USD cost via OpenRouter usage accounting) and the live account balance is pulled from OpenRouter's `/credits` API. Bottom-bar chip shows remaining credit; LEDGER pane has the full breakdown by model/purpose/day (`GET /api/usage`)
 - **Fresh console** — zero seeded/mock data; every panel starts empty and fills only from your real sources
 - **CONDUCTOR chat** (DEEP mode) — tool-calling orchestrator (capture task / complete / memory / decision) with cached-brief context
 - Single-process serving: the Cloudflare Worker serves both the API and the built React app
@@ -51,11 +55,17 @@ SOLENT is your **second executive-function layer**: it connects your real work s
 | `GET /api/items/resolve?source&ref` | Map a brief inbox ref to its durable row id |
 | `GET/POST /api/docs`, `DELETE /api/docs/:id` | Context library CRUD |
 | `GET /api/models` | Curated model presets for the picker |
+| `GET /api/agents/:id/pane` | Agent workspace data — live per-specialist features (zero-credit) |
+| `GET /api/usage` | Model spend ledger + live OpenRouter credit balance |
+| `POST /api/people/:id/vip` | Toggle VIP on a person (CIRCLE) |
+| `POST /api/memories` | Log a memory/note (SCRIBE/GHOST) |
+| `POST /api/decisions` | Log a decision (JUDGE) |
+| `DELETE /api/tasks/:id` | Remove a task |
 | `POST /api/brief?force=1` | Run the one-shot pass now (one model call) |
 | `GET/POST /api/settings` | Connector credentials (secrets write-only, never echoed) |
 | `GET /api/state` | Tasks + memories snapshot |
 | `POST /api/tasks`, `POST /api/tasks/:id/toggle` | Task CRUD |
-| `POST /api/chat` | CONDUCTOR chat (SSE) |
+| `POST /api/chat` | Council chat (SSE) — pass `agent` to talk to a specific specialist |
 
 ## Connecting your sources (once, from the UI → "sources" chip)
 

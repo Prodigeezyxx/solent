@@ -5,6 +5,7 @@ import { loadSettings, type Settings } from './settings';
 import { createTask, logAgentRun, logMemory } from './db';
 import { deriveLoops, loopsForPrompt } from './loops';
 import { docsForPrompt } from './docs';
+import { recordUsage, usageFromResponse } from './usage';
 
 /**
  * ONE-SHOT EXECUTIVE PASS.
@@ -147,11 +148,12 @@ export function extractJson(raw: string): any {
  *  - optional reasoning effort for reasoning models (Kimi K3, R1, o-series)
  *  - retries without reasoning if the route rejects that too
  */
-async function callModel(apiKey: string, model: string, system: string, user: string, reasoning?: string): Promise<string> {
+async function callModel(apiKey: string, model: string, system: string, user: string, reasoning?: string, db?: D1Database): Promise<string> {
   const payload: Record<string, unknown> = {
     model,
     temperature: 0.2,
     max_tokens: 2400,
+    usage: { include: true }, // OpenRouter: return exact cost accounting with the response
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: user },
@@ -169,6 +171,7 @@ async function callModel(apiKey: string, model: string, system: string, user: st
     });
     const json = (await res.json()) as any;
     if (!res.ok) throw new Error(json?.error?.message ?? `OpenRouter ${res.status}`);
+    if (db) await recordUsage(db, usageFromResponse(json, model, 'brief'));
     return String(json.choices?.[0]?.message?.content ?? '');
   };
   try {
@@ -284,6 +287,7 @@ export async function runBrief(env: Env, opts: { force?: boolean } = {}): Promis
       briefSystem(settings),
       userMsg,
       settings.OPENROUTER_REASONING,
+      db,
     );
     const parsed = extractJson(raw);
 

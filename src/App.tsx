@@ -4,7 +4,7 @@ import { CheckCircle2 } from 'lucide-react';
 import type { AgentRole, Message, Mode, Task } from './types';
 import { AGENTS, TASKS } from './data/agents';
 import {
-  fetchBrief, fetchTasks, runBriefNow, streamChat, toggleTaskRemote,
+  createTaskRemote, fetchBrief, fetchTasks, runBriefNow, streamChat, toggleTaskRemote,
   type Brief, type ToolEvent,
 } from './lib/api';
 import Topbar from './components/Topbar';
@@ -14,6 +14,7 @@ import RightRail from './components/RightRail';
 import BottomBar from './components/BottomBar';
 import CommandPalette from './components/CommandPalette';
 import SourcesModal from './components/SourcesModal';
+import AgentPane from './components/AgentPane';
 
 const MODE_VIEWS: Record<Mode, string> = {
   COMMAND: 'Command centre',
@@ -32,6 +33,7 @@ function App() {
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<AgentRole>('ATLAS');
+  const [agentPaneOpen, setAgentPaneOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [toast, setToast] = useState('');
   const [streaming, setStreaming] = useState(false);
@@ -105,6 +107,16 @@ function App() {
     }
   }, [refreshTasks]);
 
+  const addTask = async (title: string) => {
+    try {
+      await createTaskRemote(title, 'manual');
+      await refreshTasks();
+      setToast('Task added to the queue');
+    } catch {
+      setToast('Could not add task — is the Worker running?');
+    }
+  };
+
   const toggleTask = async (id: number) => {
     // Optimistic local update, then reconcile with the backend.
     setTasks((items) => items.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
@@ -154,6 +166,7 @@ function App() {
 
   const runCommand = (action: string) => {
     setPaletteOpen(false);
+    setAgentPaneOpen(false);
     if (action === 'focus') setMode('FOCUS');
     else if (action === 'capture') setToast('Capture ready — type in the command bar');
     else if (action === 'graph' || action === 'person') setMode('GRAPH');
@@ -170,32 +183,54 @@ function App() {
     <div className="h-screen flex flex-col bg-solent-bg text-solent-text overflow-hidden">
       <a className="skip-link" href="#main-content">Skip to main content</a>
 
-      <Topbar mode={mode} setMode={setMode} onOpenPalette={() => setPaletteOpen(true)} />
+      <Topbar mode={mode} setMode={(m) => { setAgentPaneOpen(false); setMode(m); }} onOpenPalette={() => setPaletteOpen(true)} />
 
       <div className="flex-1 flex min-h-0">
-        <LeftRail agents={AGENTS} selectedAgent={selectedAgent} onSelectAgent={setSelectedAgent} />
+        <LeftRail
+          agents={AGENTS}
+          selectedAgent={selectedAgent}
+          onSelectAgent={(id) => {
+            setSelectedAgent(id);
+            setAgentPaneOpen(true);
+          }}
+        />
 
         <main id="main-content" className="flex-1 min-w-0 flex flex-col" aria-label={MODE_VIEWS[mode]}>
-          <CenterStage
-            mode={mode}
-            tasks={tasks}
-            onToggleTask={toggleTask}
-            messages={messages}
-            onSend={sendMessage}
-            onOpenPalette={() => setPaletteOpen(true)}
-            onToggleContext={() => setContextOpen((o) => !o)}
-            streaming={streaming}
-            brief={brief}
-            briefRunning={briefRunning}
-            onRunBrief={runBrief}
-            onOpenSources={() => setSourcesOpen(true)}
-          />
+          {agentPaneOpen ? (
+            <AgentPane
+              agent={selectedAgentData}
+              onClose={() => setAgentPaneOpen(false)}
+              onToast={setToast}
+            />
+          ) : (
+            <CenterStage
+              mode={mode}
+              tasks={tasks}
+              onToggleTask={toggleTask}
+              onAddTask={addTask}
+              messages={messages}
+              onSend={sendMessage}
+              onOpenPalette={() => setPaletteOpen(true)}
+              onToggleContext={() => setContextOpen((o) => !o)}
+              streaming={streaming}
+              brief={brief}
+              briefRunning={briefRunning}
+              onRunBrief={runBrief}
+              onOpenSources={() => setSourcesOpen(true)}
+            />
+          )}
         </main>
 
         <RightRail agent={selectedAgentData} open={contextOpen} onClose={() => setContextOpen(false)} brief={brief} />
       </div>
 
-      <BottomBar onOpenCmd={() => setPaletteOpen(true)} prioritiesDone={completed} prioritiesTotal={tasks.length} />
+      <BottomBar
+        onOpenCmd={() => setPaletteOpen(true)}
+        prioritiesDone={completed}
+        prioritiesTotal={tasks.length}
+        refreshKey={brief?.generated_at}
+        onOpenLedger={() => { setSelectedAgent('LEDGER'); setAgentPaneOpen(true); }}
+      />
 
       <CommandPalette isOpen={paletteOpen} onClose={() => setPaletteOpen(false)} onAction={runCommand} />
 

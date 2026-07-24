@@ -15,6 +15,7 @@ interface CenterStageProps {
   mode: Mode;
   tasks: Task[];
   onToggleTask: (id: number) => void;
+  onAddTask: (title: string) => void;
   messages: Message[];
   onSend: (text: string) => void;
   onOpenPalette: () => void;
@@ -29,7 +30,7 @@ interface CenterStageProps {
 const FOCUS_SECONDS = 50 * 60;
 
 export default function CenterStage({
-  mode, tasks, onToggleTask, messages, onSend, onOpenPalette, onToggleContext, streaming,
+  mode, tasks, onToggleTask, onAddTask, messages, onSend, onOpenPalette, onToggleContext, streaming,
   brief, briefRunning, onRunBrief, onOpenSources,
 }: CenterStageProps) {
   const [input, setInput] = useState('');
@@ -71,6 +72,7 @@ export default function CenterStage({
             completed={completed}
             tasks={tasks}
             onToggleTask={onToggleTask}
+            onAddTask={onAddTask}
             onOpenPalette={onOpenPalette}
             onToggleContext={onToggleContext}
             brief={brief}
@@ -240,14 +242,16 @@ function SourceChips({ brief, onOpenSources }: { brief: Brief | null; onOpenSour
 }
 
 function Dashboard({
-  completed, tasks, onToggleTask, onOpenPalette, onToggleContext, brief, briefRunning, onRunBrief, onOpenSources, onSend, onInspect,
+  completed, tasks, onToggleTask, onAddTask, onOpenPalette, onToggleContext, brief, briefRunning, onRunBrief, onOpenSources, onSend, onInspect,
 }: {
-  completed: number; tasks: Task[]; onToggleTask: (id: number) => void;
+  completed: number; tasks: Task[]; onToggleTask: (id: number) => void; onAddTask: (title: string) => void;
   onOpenPalette: () => void; onToggleContext: () => void;
   brief: Brief | null; briefRunning: boolean; onRunBrief: () => void; onOpenSources: () => void;
   onSend: (text: string) => void; onInspect: (item: InboxItem) => void;
 }) {
   const [showAttention, setShowAttention] = useState(false);
+  const [addingTask, setAddingTask] = useState(false);
+  const [newTask, setNewTask] = useState('');
   const attentionItems = (brief?.inbox ?? []).filter((i) => i.needsAttention);
   const today = new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase();
   const hour = new Date().getHours();
@@ -342,8 +346,38 @@ function Dashboard({
               <span className="flex items-center gap-1.5 text-solent-dim font-mono text-[10px] tracking-widest"><Target className="w-3.5 h-3.5" /> TODAY</span>
               <h2 className="text-solent-text text-sm font-semibold mt-1">Priority queue</h2>
             </div>
-            <button className="flex items-center gap-1 text-[10px] text-solent-dim border border-solent-border rounded px-2 py-1 hover:text-solent-text transition-colors"><Plus className="w-3.5 h-3.5" /> Add</button>
+            <button
+              onClick={() => setAddingTask((v) => !v)}
+              className={`flex items-center gap-1 text-[10px] border rounded px-2 py-1 transition-colors ${addingTask ? 'border-solent-mint/50 text-solent-mint' : 'text-solent-dim border-solent-border hover:text-solent-text'}`}
+            >
+              <Plus className="w-3.5 h-3.5" /> Add
+            </button>
           </div>
+          {addingTask && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!newTask.trim()) return;
+                onAddTask(newTask.trim());
+                setNewTask('');
+                setAddingTask(false);
+              }}
+              className="flex items-center gap-2 px-4 py-3 border-b border-solent-border/50 bg-solent-mint/[.03]"
+            >
+              <Plus className="w-4 h-4 text-solent-mint shrink-0" />
+              <input
+                autoFocus
+                value={newTask}
+                onChange={(e) => setNewTask(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Escape') setAddingTask(false); }}
+                placeholder="What needs doing? (Enter to add · Esc to cancel)"
+                className="flex-1 bg-transparent text-xs text-zinc-100 placeholder:text-solent-dim outline-none"
+              />
+              <button type="submit" disabled={!newTask.trim()} className="text-[10px] font-mono px-2.5 py-1 rounded bg-solent-mint text-solent-bg font-semibold disabled:opacity-40">
+                Add
+              </button>
+            </form>
+          )}
           <div>
             {tasks.length === 0 && (
               <div className="px-4 py-8 text-center">

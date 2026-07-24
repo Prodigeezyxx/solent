@@ -8,6 +8,9 @@ import { buildGraph } from './graph';
 import { loadSettings, saveSettings, settingsStatus } from './settings';
 import { listLoops, setLoopStatus } from './loops';
 import { listDocs, getDoc, saveDoc, deleteDoc } from './docs';
+import { buildPane } from './panes';
+import { usageSummary } from './usage';
+import { logMemory, logDecision } from './db';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -161,6 +164,53 @@ app.get('/api/models', (c) =>
   }),
 );
 
+// ---- AGENT PANES ----------------------------------------------------------
+// Every council member is a real feature surface: one endpoint returns the
+// agent's live data (from D1, zero credits) + which actions the UI exposes.
+app.get('/api/agents/:id/pane', async (c) => {
+  const id = c.req.param('id').toUpperCase();
+  const settings = await loadSettings(c.env.DB, c.env);
+  try {
+    return c.json(await buildPane(c.env.DB, id, settings));
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 500);
+  }
+});
+
+// ---- USAGE / CREDITS -------------------------------------------------------
+// Local spend ledger (every model call) + live OpenRouter account credit.
+app.get('/api/usage', async (c) => {
+  const settings = await loadSettings(c.env.DB, c.env);
+  return c.json(await usageSummary(c.env.DB, settings.OPENROUTER_API_KEY));
+});
+
+// ---- PANE ACTIONS -----------------------------------------------------------
+app.post('/api/people/:id/vip', async (c) => {
+  const id = Number(c.req.param('id'));
+  await c.env.DB.prepare('UPDATE people SET vip = CASE WHEN vip = 1 THEN 0 ELSE 1 END WHERE id = ?').bind(id).run();
+  const row = await c.env.DB.prepare('SELECT vip FROM people WHERE id = ?').bind(id).first<{ vip: number }>();
+  return c.json({ ok: true, vip: !!row?.vip });
+});
+
+app.post('/api/memories', async (c) => {
+  const body = await c.req.json<{ content?: string; agent?: string; source?: string }>().catch(() => ({} as any));
+  if (!body.content?.trim()) return c.json({ error: 'content required' }, 400);
+  await logMemory(c.env.DB, body.content.trim(), body.agent || 'SCRIBE', body.source);
+  return c.json({ ok: true }, 201);
+});
+
+app.post('/api/decisions', async (c) => {
+  const body = await c.req.json<{ title?: string; rationale?: string; agent?: string }>().catch(() => ({} as any));
+  if (!body.title?.trim()) return c.json({ error: 'title required' }, 400);
+  await logDecision(c.env.DB, body.title.trim(), body.rationale?.trim() || '', body.agent || 'JUDGE');
+  return c.json({ ok: true }, 201);
+});
+
+app.delete('/api/tasks/:id', async (c) => {
+  await c.env.DB.prepare('DELETE FROM tasks WHERE id = ?').bind(Number(c.req.param('id'))).run();
+  return c.json({ ok: true });
+});
+
 // ---- KNOWLEDGE GRAPH ----------------------------------------------------
 // Relationship tree over everything the system knows. Pure D1 reads — free.
 app.get('/api/graph', async (c) => {
@@ -219,9 +269,11 @@ app.post('/api/tasks/:id/toggle', async (c) => {
   return c.json(task);
 });
 
-// CONDUCTOR chat. Expects { messages: ChatMessage[] }. Streams SSE.
+// Council chat. Expects { messages: ChatMessage[], agent?: string }. Streams SSE.
+// When `agent` names a specialist (ATLAS, HERMES…) the reply comes from that
+// agent in its own voice — with full access to the shared tools.
 app.post('/api/chat', async (c) => {
-  let body: { messages?: any[] };
+  let body: { messages?: any[]; agent?: string };
   try {
     body = await c.req.json();
   } catch {
@@ -230,7 +282,7 @@ app.post('/api/chat', async (c) => {
   const messages = Array.isArray(body.messages) ? body.messages : [];
   if (messages.length === 0) return c.json({ error: 'messages required' }, 400);
 
-  const result = await orchestrate(c.env, messages);
+  const result = await orchestrate(c.env, messages, body.agent?.toUpperCase());
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -238,7 +290,7 @@ app.post('/api/chat', async (c) => {
       const send = (event: string, data: unknown) =>
         controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
       for (const tr of result.toolResults) send('tool', tr);
-      send('reply', { content: result.reply });
+      send('reply', { content: result.reply, agent: body.agent?.toUpperCase() || 'CONDUCTOR' });
       send('done', { ok: true });
       controller.close();
     },

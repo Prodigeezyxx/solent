@@ -27,6 +27,10 @@ export interface GraphNode {
   detail?: string;
   weight: number;
   attention?: boolean;
+  /** epoch ms — lets the UI render time-based layouts */
+  ts?: number;
+  /** grouping key (source name) — lets the UI render lane/orbit layouts */
+  group?: string;
 }
 
 export interface GraphEdge {
@@ -93,11 +97,12 @@ export async function buildGraph(db: D1Database): Promise<Graph> {
     is_dm: number;
     needs_attention: number;
     attention_reason: string | null;
+    created_at: number;
   }
   let items: ItemRow[] = [];
   try {
     const { results } = await db
-      .prepare('SELECT id, source, channel, from_name, title, text, is_dm, needs_attention, attention_reason FROM items WHERE seen = 0 ORDER BY needs_attention DESC, created_at DESC LIMIT 40')
+      .prepare('SELECT id, source, channel, from_name, title, text, is_dm, needs_attention, attention_reason, created_at FROM items WHERE seen = 0 ORDER BY needs_attention DESC, created_at DESC LIMIT 40')
       .all<ItemRow>();
     items = results ?? [];
   } catch {
@@ -132,7 +137,7 @@ export async function buildGraph(db: D1Database): Promise<Graph> {
     const pid = personKey(it.from_name);
     const title = personTitles.get(it.from_name.toLowerCase());
     if (!nodes.has(pid)) {
-      addNode({ id: pid, type: 'person', label: it.from_name, detail: title ?? undefined, weight: 3 });
+      addNode({ id: pid, type: 'person', label: it.from_name, detail: title ?? undefined, weight: 3, group: it.source });
     } else {
       const p = nodes.get(pid)!;
       p.weight = Math.min(p.weight + 0.5, 6);
@@ -148,6 +153,8 @@ export async function buildGraph(db: D1Database): Promise<Graph> {
       detail: `${it.channel ?? it.source} · ${clip(it.text, 150)}${it.needs_attention ? ` · ⚑ ${it.attention_reason}` : ''}`,
       weight: it.needs_attention ? 2.6 : 1.5,
       attention: !!it.needs_attention,
+      ts: it.created_at,
+      group: it.source,
     });
     addEdge(pid, mid, 'sent');
     if (it.is_dm) addEdge(srcId, mid, 'in');
@@ -196,32 +203,32 @@ export async function buildGraph(db: D1Database): Promise<Graph> {
   // ---- D1 logs: open tasks, memories, decisions ---------------------------
   try {
     const { results: tasks } = await db
-      .prepare('SELECT id, title, context, done FROM tasks ORDER BY created_at DESC LIMIT 20')
-      .all<{ id: number; title: string; context: string | null; done: number }>();
+      .prepare('SELECT id, title, context, done, created_at FROM tasks ORDER BY created_at DESC LIMIT 20')
+      .all<{ id: number; title: string; context: string | null; done: number; created_at: number }>();
     for (const t of tasks ?? []) {
       const dup = [...nodes.values()].some((n) => n.type === 'task' && n.label.toLowerCase() === clip(t.title, 48).toLowerCase());
       if (dup) continue;
       const id = `task:${t.id}`;
-      addNode({ id, type: 'task', label: clip(t.title, 48), detail: t.done ? 'done' : t.context ?? 'open', weight: t.done ? 2 : 3.5 });
       const src = (t.context ?? '').match(/\b(pumble|gmail|zoho)\b/i)?.[1]?.toLowerCase();
+      addNode({ id, type: 'task', label: clip(t.title, 48), detail: t.done ? 'done' : t.context ?? 'open', weight: t.done ? 2 : 3.5, ts: t.created_at, group: src ?? undefined });
       addEdge(src && nodes.has(`source:${src}`) ? `source:${src}` : 'hub', id, 'derived');
     }
 
     const { results: memories } = await db
-      .prepare('SELECT id, content, agent FROM memories ORDER BY created_at DESC LIMIT 10')
-      .all<{ id: number; content: string; agent: string }>();
+      .prepare('SELECT id, content, agent, created_at FROM memories ORDER BY created_at DESC LIMIT 10')
+      .all<{ id: number; content: string; agent: string; created_at: number }>();
     for (const m of memories ?? []) {
       const id = `memory:${m.id}`;
-      addNode({ id, type: 'memory', label: clip(m.content, 46), detail: `logged by ${m.agent}`, weight: 2 });
+      addNode({ id, type: 'memory', label: clip(m.content, 46), detail: `logged by ${m.agent}`, weight: 2, ts: m.created_at });
       addEdge('hub', id, 'logged');
     }
 
     const { results: decisions } = await db
-      .prepare('SELECT id, title, rationale FROM decisions ORDER BY created_at DESC LIMIT 10')
-      .all<{ id: number; title: string; rationale: string | null }>();
+      .prepare('SELECT id, title, rationale, created_at FROM decisions ORDER BY created_at DESC LIMIT 10')
+      .all<{ id: number; title: string; rationale: string | null; created_at: number }>();
     for (const d of decisions ?? []) {
       const id = `decision:${d.id}`;
-      addNode({ id, type: 'decision', label: clip(d.title, 46), detail: d.rationale ?? undefined, weight: 3 });
+      addNode({ id, type: 'decision', label: clip(d.title, 46), detail: d.rationale ?? undefined, weight: 3, ts: d.created_at });
       addEdge('hub', id, 'logged');
     }
   } catch {

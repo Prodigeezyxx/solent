@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { GitBranch, Loader2, RefreshCw, X } from 'lucide-react';
+import { Clock3, GitBranch, Loader2, Maximize2, Minimize2, Orbit, RefreshCw, Share2, Users, X } from 'lucide-react';
 import { fetchGraph, type GraphData, type GraphNode, type GraphNodeType } from '../lib/api';
+
+type LayoutMode = 'force' | 'orbit' | 'people' | 'timeline';
+
+const LAYOUTS: { id: LayoutMode; label: string; icon: React.ReactNode; hint: string }[] = [
+  { id: 'force', label: 'Web', icon: <Share2 className="w-3 h-3" />, hint: 'force-directed relationship web' },
+  { id: 'orbit', label: 'Orbit', icon: <Orbit className="w-3 h-3" />, hint: 'concentric rings by type — attention pulls inward' },
+  { id: 'people', label: 'People', icon: <Users className="w-3 h-3" />, hint: 'person-centric: who sends what, grouped by source' },
+  { id: 'timeline', label: 'Timeline', icon: <Clock3 className="w-3 h-3" />, hint: 'items placed left→right by time' },
+];
 
 /**
  * Knowledge graph panel — force-directed relationship tree over everything
@@ -44,6 +53,8 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
   const [hovered, setHovered] = useState<string | null>(null);
   const [hiddenTypes, setHiddenTypes] = useState<Set<GraphNodeType>>(new Set());
   const [view, setView] = useState({ x: 0, y: 0, k: 1 });
+  const [layout, setLayout] = useState<LayoutMode>('force');
+  const [fullscreen, setFullscreen] = useState(false);
 
   const svgRef = useRef<SVGSVGElement>(null);
   const simRef = useRef<SimNode[]>([]);
@@ -73,6 +84,14 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
 
   useEffect(() => { load(); }, [load]);
 
+  // Esc exits fullscreen
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fullscreen]);
+
   const adjacency = useMemo(() => {
     const map = new Map<string, Set<string>>();
     for (const e of graph?.edges ?? []) {
@@ -84,9 +103,79 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
     return map;
   }, [graph]);
 
+  // ---- Deterministic layouts (orbit / people / timeline) --------------------
+  useEffect(() => {
+    if (!graph || graph.empty || layout === 'force') return;
+    const W = 900, H = 600;
+    const nodes = simRef.current;
+    const place = (n: SimNode, x: number, y: number) => { n.x = x; n.y = y; n.vx = 0; n.vy = 0; };
+
+    if (layout === 'orbit') {
+      // Concentric rings: hub → sources → channels+people → messages → derived/logged.
+      const ringOf: Record<string, number> = {
+        hub: 0, source: 1, channel: 2, person: 2, message: 3, task: 4, signal: 4, draft: 4, memory: 4, decision: 4,
+      };
+      const rings = new Map<number, SimNode[]>();
+      for (const n of nodes) {
+        const r = n.attention ? Math.max(1, (ringOf[n.type] ?? 4) - 1) : ringOf[n.type] ?? 4;
+        if (!rings.has(r)) rings.set(r, []);
+        rings.get(r)!.push(n);
+      }
+      const RADII = [0, 90, 175, 255, 330];
+      for (const [ring, list] of rings) {
+        list.sort((a, b) => (a.group ?? '').localeCompare(b.group ?? '') || a.type.localeCompare(b.type));
+        list.forEach((n, i) => {
+          const angle = (i / list.length) * Math.PI * 2 - Math.PI / 2;
+          place(n, W / 2 + Math.cos(angle) * RADII[Math.min(ring, 4)], H / 2 + Math.sin(angle) * RADII[Math.min(ring, 4)]);
+        });
+      }
+    } else if (layout === 'people') {
+      // Person-centric lanes: sources across the top, people as columns, their messages below.
+      const sources = nodes.filter((n) => n.type === 'source');
+      const people = nodes.filter((n) => n.type === 'person');
+      const rest = nodes.filter((n) => !['source', 'person', 'message', 'hub'].includes(n.type));
+      const hub = nodes.find((n) => n.type === 'hub');
+      if (hub) place(hub, 60, 40);
+      sources.forEach((s, i) => place(s, 200 + i * 180, 40));
+      const colW = Math.max(70, (W - 80) / Math.max(people.length, 1));
+      people
+        .sort((a, b) => (a.group ?? '').localeCompare(b.group ?? '') || b.weight - a.weight)
+        .forEach((p, i) => {
+          const x = 50 + colW / 2 + i * colW;
+          place(p, Math.min(x, W - 40), 130);
+          // that person's messages fall in a column beneath them
+          const msgs = nodes.filter((n) => n.type === 'message' && (adjacency.get(p.id)?.has(n.id) ?? false));
+          msgs.forEach((m, j) => place(m, Math.min(x, W - 40) + ((j % 2) * 14 - 7), 195 + j * 46));
+        });
+      // orphan messages + derived nodes along the bottom
+      const placedMsg = new Set(people.flatMap((p) => [...(adjacency.get(p.id) ?? [])]));
+      nodes.filter((n) => n.type === 'message' && !placedMsg.has(n.id)).forEach((m, i) => place(m, 60 + i * 60, H - 130));
+      rest.forEach((n, i) => place(n, 60 + (i % 12) * 68, H - 60 - Math.floor(i / 12) * 40));
+    } else if (layout === 'timeline') {
+      // Time on X: older left, newer right. Untimed structural nodes pinned as a left rail.
+      const timed = nodes.filter((n) => n.ts);
+      const untimed = nodes.filter((n) => !n.ts);
+      const times = timed.map((n) => n.ts!);
+      const min = Math.min(...times, Date.now() - 86_400_000);
+      const max = Math.max(...times, Date.now());
+      const span = Math.max(max - min, 1);
+      const laneY: Record<string, number> = { message: 170, task: 300, signal: 380, draft: 420, memory: 460, decision: 520 };
+      const seen = new Map<number, number>(); // x-bucket collision offsets
+      timed.forEach((n) => {
+        const x = 120 + ((n.ts! - min) / span) * (W - 180);
+        const bucket = Math.round(x / 30) * 1000 + Math.round((laneY[n.type] ?? 240) / 10);
+        const off = seen.get(bucket) ?? 0;
+        seen.set(bucket, off + 1);
+        place(n, x, (laneY[n.type] ?? 240) + off * 34);
+      });
+      untimed.forEach((n, i) => place(n, 46, 60 + i * 34));
+    }
+    force((v) => v + 1);
+  }, [graph, layout, adjacency]);
+
   // ---- Force simulation ----------------------------------------------------
   useEffect(() => {
-    if (!graph || graph.empty) return;
+    if (!graph || graph.empty || layout !== 'force') return;
     let frame = 0;
     let running = true;
     const edges = graph.edges;
@@ -134,7 +223,7 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
     frame = requestAnimationFrame(tick);
     const stop = setTimeout(() => { running = false; cancelAnimationFrame(frame); }, 8000); // settle then stop burning CPU
     return () => { running = false; cancelAnimationFrame(frame); clearTimeout(stop); };
-  }, [graph]);
+  }, [graph, layout]);
 
   // ---- Interaction ----------------------------------------------------------
   const toWorld = (clientX: number, clientY: number) => {
@@ -199,18 +288,43 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
   }, [graph]);
 
   return (
-    <div className="h-full flex flex-col relative">
-      <div className="flex items-center justify-between gap-3 px-6 pt-6 pb-3 flex-wrap">
+    <div className={fullscreen ? 'fixed inset-0 z-[130] bg-solent-bg flex flex-col' : 'h-full flex flex-col relative'}>
+      <div className={`flex items-center justify-between gap-3 px-6 pt-${fullscreen ? '4' : '6'} pb-2 flex-wrap`}>
         <div>
           <p className="text-solent-dim font-mono text-[10px] tracking-widest mb-1 flex items-center gap-1.5"><GitBranch className="w-3.5 h-3.5" /> KNOWLEDGE GRAPH</p>
-          <h1 className="text-xl font-semibold tracking-tight text-solent-text">How everything connects.</h1>
+          {!fullscreen && <h1 className="text-xl font-semibold tracking-tight text-solent-text">How everything connects.</h1>}
         </div>
-        <button
-          onClick={load}
-          className="flex items-center gap-1.5 px-3 h-8 rounded-md border border-solent-border text-solent-dim text-xs hover:text-solent-mint hover:border-solent-mint/40 transition-colors"
-        >
-          <RefreshCw className="w-3.5 h-3.5" /> Rebuild graph
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Layout switcher — four ways to see the same graph */}
+          <div className="flex items-center rounded-md border border-solent-border overflow-hidden">
+            {LAYOUTS.map((l) => (
+              <button
+                key={l.id}
+                onClick={() => { setLayout(l.id); setView({ x: 0, y: 0, k: 1 }); }}
+                title={l.hint}
+                className={`flex items-center gap-1.5 px-2.5 h-8 text-[10px] font-mono uppercase tracking-wider transition-colors border-r border-solent-border last:border-r-0 ${
+                  layout === l.id ? 'bg-solent-mint/10 text-solent-mint' : 'text-solent-dim hover:text-solent-text'
+                }`}
+              >
+                {l.icon} {l.label}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={load}
+            className="flex items-center gap-1.5 px-3 h-8 rounded-md border border-solent-border text-solent-dim text-xs hover:text-solent-mint hover:border-solent-mint/40 transition-colors"
+          >
+            <RefreshCw className="w-3.5 h-3.5" /> Rebuild
+          </button>
+          <button
+            onClick={() => setFullscreen((f) => !f)}
+            title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            className="flex items-center gap-1.5 px-3 h-8 rounded-md border border-solent-border text-solent-dim text-xs hover:text-solent-mint hover:border-solent-mint/40 transition-colors"
+          >
+            {fullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            {fullscreen ? 'Exit' : 'Expand'}
+          </button>
+        </div>
       </div>
 
       {/* Type filter legend */}
@@ -228,7 +342,7 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
         ))}
       </div>
 
-      <div className="flex-1 min-h-0 mx-6 mb-6 rounded-xl border border-solent-border bg-solent-surface/60 relative overflow-hidden">
+      <div className={`flex-1 min-h-0 ${fullscreen ? 'mx-3 mb-3' : 'mx-6 mb-6'} rounded-xl border border-solent-border bg-solent-surface/60 relative overflow-hidden`}>
         {loading && (
           <div className="absolute inset-0 grid place-items-center z-10">
             <Loader2 className="w-6 h-6 text-solent-mint animate-spin" />
@@ -354,7 +468,15 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
           </div>
         )}
 
-        <span className="absolute left-3 bottom-2.5 text-[9px] font-mono text-solent-dim z-10">drag nodes · scroll to zoom · drag canvas to pan</span>
+        {/* Timeline axis hint */}
+        {layout === 'timeline' && !loading && graph && !graph.empty && (
+          <div className="absolute inset-x-12 top-2 flex justify-between text-[9px] font-mono text-solent-dim z-10 pointer-events-none">
+            <span>← older</span><span>time →</span><span>now</span>
+          </div>
+        )}
+        <span className="absolute left-3 bottom-2.5 text-[9px] font-mono text-solent-dim z-10">
+          {LAYOUTS.find((l) => l.id === layout)?.hint} · drag nodes · scroll to zoom · drag to pan
+        </span>
       </div>
     </div>
   );

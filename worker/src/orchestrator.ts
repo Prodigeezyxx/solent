@@ -6,6 +6,8 @@ import { createTask, logAgentRun, logDecision, logMemory, toggleTask, listTasks 
 import { loadSettings } from './settings';
 import { setLoopStatus } from './loops';
 import { docsForPrompt, saveDoc } from './docs';
+import { recordUsage, usageFromResponse } from './usage';
+import { AGENTS } from './agents';
 
 const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
@@ -105,10 +107,14 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   },
 ];
 
-function buildSystem(liveContext: string, loopCtx: string, docCtx: string, operatorName?: string, operatorContext?: string): string {
+function buildSystem(liveContext: string, loopCtx: string, docCtx: string, operatorName?: string, operatorContext?: string, agentId?: string): string {
   const who = operatorName?.trim() || 'the operator';
+  const specialist = agentId && agentId !== 'CONDUCTOR' ? AGENTS.find((a) => a.id === agentId) : undefined;
+  const identity = specialist
+    ? `${specialist.system} You are part of SOLENT, an AI-native personal command centre for ${who}, and you have full access to the council's shared tools — use them to persist real work (tasks, memories, decisions, loops, docs). Stay strictly in your ${specialist.role} lane; if the ask belongs to another specialist, say so and hand off. `
+    : `You are CONDUCTOR, the orchestrator of SOLENT, an AI-native personal command centre for ${who}. `;
   return (
-    `You are CONDUCTOR, the orchestrator of SOLENT, an AI-native personal command centre for ${who}. ` +
+    identity +
     (operatorContext?.trim() ? `Operator context: ${operatorContext.trim()}. ` : '') +
     'You have a council of specialist agents you can dispatch by calling tools. Choose the right agent for each job.\n\n' +
     'Available agents:\n' +
@@ -144,6 +150,7 @@ export interface OrchestrationResult {
 export async function orchestrate(
   env: Env,
   history: ChatMessage[],
+  agentId?: string,
 ): Promise<OrchestrationResult> {
   const settings = await loadSettings(env.DB, env);
 
@@ -163,7 +170,7 @@ export async function orchestrate(
     docsForPrompt(env.DB, 2500),
   ]);
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: 'system', content: buildSystem(liveContext, loopCtx, docCtx, settings.OPERATOR_NAME, settings.OPERATOR_CONTEXT) },
+    { role: 'system', content: buildSystem(liveContext, loopCtx, docCtx, settings.OPERATOR_NAME, settings.OPERATOR_CONTEXT, agentId) },
     ...history.map((m) => ({
       role: m.role === 'agent' ? ('assistant' as const) : (m.role as 'user' | 'assistant' | 'system'),
       content: m.agent ? `[${m.agent}] ${m.content}` : m.content,
@@ -176,16 +183,19 @@ export async function orchestrate(
   // Allow up to 3 tool-call rounds.
   for (let round = 0; round < 3; round++) {
     const effort = settings.OPENROUTER_REASONING && settings.OPENROUTER_REASONING !== 'off' ? settings.OPENROUTER_REASONING : undefined;
+    const model = settings.OPENROUTER_MODEL || 'moonshotai/kimi-k3';
     const completion = await client.chat.completions.create({
-      model: settings.OPENROUTER_MODEL || 'moonshotai/kimi-k3',
+      model,
       messages,
       tools: TOOLS,
       tool_choice: 'auto',
       temperature: 0.4,
       stream: false,
-      // OpenRouter extension: reasoning effort for models that support it (Kimi K3, R1…)
+      // OpenRouter extensions: exact cost accounting + reasoning effort
+      ...({ usage: { include: true } } as Record<string, unknown>),
       ...(effort ? ({ reasoning: { effort } } as Record<string, unknown>) : {}),
     } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming);
+    await recordUsage(env.DB, usageFromResponse(completion, model, agentId && agentId !== 'CONDUCTOR' ? `agent:${agentId}` : 'chat'));
 
     const choice = completion.choices[0];
     const msg = choice.message;

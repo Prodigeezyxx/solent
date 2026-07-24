@@ -14,18 +14,19 @@ export interface ChatPayload {
 
 export interface ChatStreamHandlers {
   onTool?: (tool: ToolEvent) => void;
-  onReply: (chunk: { content: string }) => void;
+  onReply: (chunk: { content: string; agent?: string }) => void;
   onDone?: () => void;
   onError?: (err: Error) => void;
 }
 
-// Streams a CONDUCTOR response from the Worker via Server-Sent Events.
-export async function streamChat(messages: ChatPayload[], handlers: ChatStreamHandlers): Promise<void> {
+// Streams a council response from the Worker via Server-Sent Events.
+// Pass `agent` to talk to a specific specialist (ATLAS, HERMES…) in its own voice.
+export async function streamChat(messages: ChatPayload[], handlers: ChatStreamHandlers, agent?: string): Promise<void> {
   try {
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages }),
+      body: JSON.stringify({ messages, ...(agent && agent !== 'CONDUCTOR' ? { agent } : {}) }),
     });
     if (!res.ok || !res.body) {
       handlers.onError?.(new Error(`Chat request failed (${res.status})`));
@@ -141,6 +142,8 @@ export interface GraphNode {
   detail?: string;
   weight: number;
   attention?: boolean;
+  ts?: number;
+  group?: string;
 }
 
 export interface GraphEdge {
@@ -322,4 +325,102 @@ export async function toggleTaskRemote(id: number): Promise<Task> {
   if (!res.ok) throw new Error('toggle failed');
   const t = (await res.json()) as Task;
   return { ...t, done: !!t.done, priority: !!t.priority };
+}
+
+/** Manually add a task to the priority queue. */
+export async function createTaskRemote(title: string, context?: string): Promise<Task> {
+  const res = await fetch('/api/tasks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, context }),
+  });
+  if (!res.ok) throw new Error('create task failed');
+  const t = (await res.json()) as Task;
+  return { ...t, done: !!t.done, priority: !!t.priority };
+}
+
+export async function deleteTaskRemote(id: number): Promise<void> {
+  await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
+}
+
+// ---- Agent panes ---------------------------------------------------------------
+
+export interface PaneStat { label: string; value: string; hint?: string }
+export interface PaneItem {
+  id: number | string;
+  title: string;
+  detail?: string;
+  meta?: string;
+  flag?: boolean;
+  done?: boolean;
+  ts?: number;
+}
+export interface PaneSection {
+  key: string;
+  title: string;
+  kind: 'tasks' | 'list' | 'people' | 'drafts' | 'usage' | 'docs' | 'loops';
+  items: PaneItem[];
+  empty?: string;
+}
+export interface AgentPane {
+  agent: string;
+  headline: string;
+  stats: PaneStat[];
+  sections: PaneSection[];
+  actions: string[];
+  chat_hint: string;
+}
+
+/** Zero-credit read: the agent's live workspace data from D1. */
+export async function fetchAgentPane(agentId: string): Promise<AgentPane> {
+  const res = await fetch(`/api/agents/${agentId}/pane`);
+  if (!res.ok) throw new Error(`pane failed (${res.status})`);
+  return (await res.json()) as AgentPane;
+}
+
+export async function toggleVip(personId: number): Promise<boolean> {
+  const res = await fetch(`/api/people/${personId}/vip`, { method: 'POST' });
+  if (!res.ok) throw new Error('vip toggle failed');
+  const json = (await res.json()) as { vip: boolean };
+  return json.vip;
+}
+
+export async function addMemoryRemote(content: string, agent = 'SCRIBE'): Promise<void> {
+  const res = await fetch('/api/memories', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content, agent }),
+  });
+  if (!res.ok) throw new Error('memory add failed');
+}
+
+export async function addDecisionRemote(title: string, rationale: string): Promise<void> {
+  const res = await fetch('/api/decisions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, rationale }),
+  });
+  if (!res.ok) throw new Error('decision add failed');
+}
+
+// ---- Usage / credits --------------------------------------------------------------
+
+export interface UsageBucket { calls: number; tokens: number; cost: number }
+export interface UsageSummaryData {
+  today: UsageBucket;
+  week: UsageBucket;
+  all: UsageBucket;
+  by_model: { model: string; calls: number; tokens: number; cost: number }[];
+  by_purpose: { purpose: string; calls: number; tokens: number; cost: number }[];
+  recent: { model: string; purpose: string; total_tokens: number; cost: number; created_at: number }[];
+  daily: { day: string; calls: number; tokens: number; cost: number }[];
+  credits?: { total_credits: number; total_usage: number; remaining: number };
+  credits_error?: string;
+}
+
+/** Local spend ledger + live OpenRouter account credit. Zero model credits. */
+export async function fetchUsage(): Promise<UsageSummaryData> {
+  const res = await fetch('/api/usage');
+  if (!res.ok) throw new Error('usage failed');
+  return (await res.json()) as UsageSummaryData;
 }
