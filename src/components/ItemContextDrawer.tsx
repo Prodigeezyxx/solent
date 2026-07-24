@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { AlertTriangle, AtSign, Check, Loader2, MessageSquare, RefreshCcw, User, X } from 'lucide-react';
-import { fetchItemContext, markSeen, resolveItemId, type InboxItem, type ItemContext } from '../lib/api';
+import { fetchItemContext, resolveItemId, type InboxItem, type ItemContext } from '../lib/api';
+import TriageActions from './TriageActions';
 
 /**
  * ITEM CONTEXT DRAWER — click any inbox/attention item and see EVERYTHING
@@ -46,10 +47,11 @@ export default function ItemContextDrawer({ item, onClose, onDraft, onHandled }:
     })();
   }, [item]);
 
-  const markHandled = async () => {
-    if (!ctx) return;
+  const onTriaged = (action: 'sorted' | 'deferred') => {
     setHandled(true);
-    try { await markSeen(ctx.item.id); onHandled?.(); } catch { /* ignore */ }
+    onHandled?.();
+    // Give the user a beat to see the confirmation, then close.
+    window.setTimeout(onClose, action === 'sorted' ? 350 : 350);
   };
 
   return (
@@ -104,13 +106,20 @@ export default function ItemContextDrawer({ item, onClose, onDraft, onHandled }:
                 >
                   Draft reply with CONDUCTOR
                 </button>
-                <button
-                  onClick={markHandled}
-                  disabled={!ctx || handled}
-                  className={`h-8 px-3 rounded-md border text-xs font-semibold transition-colors ${handled ? 'border-solent-mint/40 text-solent-mint' : 'border-solent-border text-solent-dim hover:text-solent-text'} disabled:opacity-60`}
-                >
-                  {handled ? <span className="flex items-center gap-1"><Check className="w-3.5 h-3.5" /> handled</span> : 'Mark handled'}
-                </button>
+              </div>
+
+              {/* Universal triage — sorted / defer, reflected system-wide */}
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-solent-border/60 bg-black/10 px-3 py-2">
+                <span className="text-[9px] font-mono uppercase tracking-widest text-solent-dim">Triage</span>
+                {handled ? (
+                  <span className="flex items-center gap-1 text-[10px] font-mono text-solent-mint"><Check className="w-3.5 h-3.5" /> done — reflected everywhere</span>
+                ) : (
+                  <TriageActions
+                    target={{ itemId: ctx?.item.id, source: item.source, ref: item.ref }}
+                    onDone={onTriaged}
+                    size="sm"
+                  />
+                )}
               </div>
 
               {loading && (

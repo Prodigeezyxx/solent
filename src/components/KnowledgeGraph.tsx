@@ -57,6 +57,22 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
   const [fullscreen, setFullscreen] = useState(false);
 
   const svgRef = useRef<SVGSVGElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  // World coordinates track the real canvas size, so the graph fills the whole
+  // pane instead of letterboxing inside a fixed 900×600 box.
+  const [dims, setDims] = useState({ W: 900, H: 600 });
+  const dimsRef = useRef(dims);
+  dimsRef.current = dims;
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const r = entries[0]?.contentRect;
+      if (r && r.width > 50 && r.height > 50) setDims({ W: Math.round(r.width), H: Math.round(r.height) });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const simRef = useRef<SimNode[]>([]);
   const [, force] = useState(0); // re-render ticker
   const dragRef = useRef<{ id: string | null; panning: boolean; lastX: number; lastY: number }>({ id: null, panning: false, lastX: 0, lastY: 0 });
@@ -67,7 +83,7 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
       const g = await fetchGraph();
       setGraph(g);
       // Seed positions: hub centre, sources ring, rest scattered by type angle.
-      const W = 900, H = 600;
+      const { W, H } = dimsRef.current;
       simRef.current = g.nodes.map((n, i) => {
         const angle = (i / Math.max(g.nodes.length, 1)) * Math.PI * 2;
         const dist = n.type === 'hub' ? 0 : n.type === 'source' ? 120 : 220 + (i % 5) * 30;
@@ -106,7 +122,7 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
   // ---- Deterministic layouts (orbit / people / timeline) --------------------
   useEffect(() => {
     if (!graph || graph.empty || layout === 'force') return;
-    const W = 900, H = 600;
+    const { W, H } = dims;
     const nodes = simRef.current;
     const place = (n: SimNode, x: number, y: number) => { n.x = x; n.y = y; n.vx = 0; n.vy = 0; };
 
@@ -171,7 +187,7 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
       untimed.forEach((n, i) => place(n, 46, 60 + i * 34));
     }
     force((v) => v + 1);
-  }, [graph, layout, adjacency]);
+  }, [graph, layout, adjacency, dims]);
 
   // ---- Force simulation ----------------------------------------------------
   useEffect(() => {
@@ -212,8 +228,8 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
       // Gentle centring + integrate
       for (const n of nodes) {
         if (n.fixed || dragRef.current.id === n.id) { n.vx = 0; n.vy = 0; continue; }
-        n.vx += (450 - n.x) * 0.0006;
-        n.vy += (300 - n.y) * 0.0006;
+        n.vx += (dimsRef.current.W / 2 - n.x) * 0.0006;
+        n.vy += (dimsRef.current.H / 2 - n.y) * 0.0006;
         n.vx *= 0.85; n.vy *= 0.85;
         n.x += n.vx; n.y += n.vy;
       }
@@ -228,8 +244,8 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
   // ---- Interaction ----------------------------------------------------------
   const toWorld = (clientX: number, clientY: number) => {
     const rect = svgRef.current!.getBoundingClientRect();
-    const px = ((clientX - rect.left) / rect.width) * 900;
-    const py = ((clientY - rect.top) / rect.height) * 600;
+    const px = ((clientX - rect.left) / rect.width) * dims.W;
+    const py = ((clientY - rect.top) / rect.height) * dims.H;
     return { x: (px - view.x) / view.k, y: (py - view.y) / view.k };
   };
 
@@ -250,7 +266,7 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
       if (n) { n.x = p.x; n.y = p.y; force((v) => v + 1); }
     } else if (d.panning) {
       const rect = svgRef.current!.getBoundingClientRect();
-      setView((v) => ({ ...v, x: v.x + ((e.clientX - d.lastX) / rect.width) * 900, y: v.y + ((e.clientY - d.lastY) / rect.height) * 600 }));
+      setView((v) => ({ ...v, x: v.x + ((e.clientX - d.lastX) / rect.width) * dims.W, y: v.y + ((e.clientY - d.lastY) / rect.height) * dims.H }));
       dragRef.current = { ...d, lastX: e.clientX, lastY: e.clientY };
     }
   };
@@ -262,8 +278,8 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
     setView((v) => {
       const k = Math.min(Math.max(v.k * factor, 0.35), 3.5);
       const rect = svgRef.current!.getBoundingClientRect();
-      const px = ((e.clientX - rect.left) / rect.width) * 900;
-      const py = ((e.clientY - rect.top) / rect.height) * 600;
+      const px = ((e.clientX - rect.left) / rect.width) * dims.W;
+      const py = ((e.clientY - rect.top) / rect.height) * dims.H;
       return { k, x: px - ((px - v.x) / v.k) * k, y: py - ((py - v.y) / v.k) * k };
     });
   };
@@ -289,10 +305,10 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
 
   return (
     <div className={fullscreen ? 'fixed inset-0 z-[130] bg-solent-bg flex flex-col' : 'h-full flex flex-col relative'}>
-      <div className={`flex items-center justify-between gap-3 px-6 pt-${fullscreen ? '4' : '6'} pb-2 flex-wrap`}>
-        <div>
-          <p className="text-solent-dim font-mono text-[10px] tracking-widest mb-1 flex items-center gap-1.5"><GitBranch className="w-3.5 h-3.5" /> KNOWLEDGE GRAPH</p>
-          {!fullscreen && <h1 className="text-xl font-semibold tracking-tight text-solent-text">How everything connects.</h1>}
+      <div className={`flex items-center justify-between gap-3 px-4 ${fullscreen ? 'pt-3' : 'pt-4'} pb-2 flex-wrap`}>
+        <div className="flex items-center gap-2">
+          <p className="text-solent-dim font-mono text-[10px] tracking-widest flex items-center gap-1.5"><GitBranch className="w-3.5 h-3.5" /> KNOWLEDGE GRAPH</p>
+          {!fullscreen && <span className="text-solent-muted text-xs hidden md:inline">· how everything connects</span>}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {/* Layout switcher — four ways to see the same graph */}
@@ -328,7 +344,7 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
       </div>
 
       {/* Type filter legend */}
-      <div className="flex items-center gap-1.5 px-6 pb-3 flex-wrap">
+      <div className="flex items-center gap-1.5 px-4 pb-2 flex-wrap">
         {(Object.keys(TYPE_STYLE) as GraphNodeType[]).filter((t) => t !== 'hub' && (typeCounts.get(t) ?? 0) > 0).map((t) => (
           <button
             key={t}
@@ -342,7 +358,7 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
         ))}
       </div>
 
-      <div className={`flex-1 min-h-0 ${fullscreen ? 'mx-3 mb-3' : 'mx-6 mb-6'} rounded-xl border border-solent-border bg-solent-surface/60 relative overflow-hidden`}>
+      <div ref={wrapRef} className={`flex-1 min-h-0 ${fullscreen ? 'mx-3 mb-3' : 'mx-4 mb-4'} rounded-xl border border-solent-border bg-solent-surface/60 relative overflow-hidden`}>
         {loading && (
           <div className="absolute inset-0 grid place-items-center z-10">
             <Loader2 className="w-6 h-6 text-solent-mint animate-spin" />
@@ -368,7 +384,7 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
 
         <svg
           ref={svgRef}
-          viewBox="0 0 900 600"
+          viewBox={`0 0 ${dims.W} ${dims.H}`}
           className="w-full h-full cursor-grab active:cursor-grabbing touch-none select-none"
           onPointerDown={(e) => onPointerDown(e)}
           onPointerMove={onPointerMove}

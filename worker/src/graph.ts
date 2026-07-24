@@ -102,7 +102,7 @@ export async function buildGraph(db: D1Database): Promise<Graph> {
   let items: ItemRow[] = [];
   try {
     const { results } = await db
-      .prepare('SELECT id, source, channel, from_name, title, text, is_dm, needs_attention, attention_reason, created_at FROM items WHERE seen = 0 ORDER BY needs_attention DESC, created_at DESC LIMIT 40')
+      .prepare("SELECT id, source, channel, from_name, title, text, is_dm, needs_attention, attention_reason, created_at FROM items WHERE seen = 0 AND triage_status = 'open' ORDER BY needs_attention DESC, created_at DESC LIMIT 40")
       .all<ItemRow>();
     items = results ?? [];
   } catch {

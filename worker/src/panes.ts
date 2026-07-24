@@ -24,6 +24,8 @@ export interface PaneItem {
   flag?: boolean;
   done?: boolean;
   ts?: number;
+  /** Set when this row is backed by the items table — UI shows universal triage (sorted/defer). */
+  triage?: boolean;
 }
 
 export interface PaneSection {
@@ -162,7 +164,7 @@ async function hermesPane(db: D1Database): Promise<AgentPane> {
   const brief = await cachedBrief(db);
   const replies = (brief?.replies ?? []) as any[];
   const { results } = await db
-    .prepare('SELECT id, source, channel, from_name, text, attention_reason, created_at FROM items WHERE needs_attention = 1 AND seen = 0 ORDER BY created_at DESC LIMIT 12')
+    .prepare("SELECT id, source, channel, from_name, text, attention_reason, created_at FROM items WHERE needs_attention = 1 AND triage_status = 'open' ORDER BY created_at DESC LIMIT 12")
     .all();
   const waiting = (results ?? []) as any[];
   return {
@@ -180,7 +182,7 @@ async function hermesPane(db: D1Database): Promise<AgentPane> {
       },
       {
         key: 'waiting', title: 'Messages that need a reply', kind: 'list',
-        items: waiting.map((w) => ({ id: w.id, title: `${w.from_name} · ${w.channel ?? w.source}`, detail: clip(w.text, 110), meta: w.attention_reason ?? '', flag: true })),
+        items: waiting.map((w) => ({ id: w.id, title: `${w.from_name} · ${w.channel ?? w.source}`, detail: clip(w.text, 110), meta: w.attention_reason ?? '', flag: true, triage: true })),
         empty: 'Inbox zero on human messages.',
       },
     ],

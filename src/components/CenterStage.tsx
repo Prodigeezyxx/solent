@@ -6,10 +6,39 @@ import {
   Sparkles, Inbox, Users, Loader2, Plug, RefreshCw, Mail, MessageSquare, PenLine, AlertTriangle, AtSign,
 } from 'lucide-react';
 import type { Mode, Task, Message } from '../types';
-import type { Brief, InboxItem } from '../lib/api';
+import {
+  fetchTriageOverlay, deferTaskRemote, fetchDeferredItems, triageItemRemote,
+  type Brief, type InboxItem, type DeferChoice, type DeferredItem,
+} from '../lib/api';
 import KnowledgeGraph from './KnowledgeGraph';
 import OpenLoops from './OpenLoops';
 import ItemContextDrawer from './ItemContextDrawer';
+import TriageActions from './TriageActions';
+
+/**
+ * Universal triage overlay — rows from the cached brief that were marked
+ * sorted/deferred anywhere in the app disappear here too. One D1 state,
+ * reflected system-wide. Zero credits.
+ */
+function useTriageOverlay(briefKey: number | string | undefined) {
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    let alive = true;
+    fetchTriageOverlay()
+      .then((d) => {
+        if (!alive) return;
+        const s = new Set<string>();
+        for (const [key, v] of Object.entries(d.overlay)) {
+          if (v.status === 'sorted' || v.status === 'deferred') s.add(key);
+        }
+        setHidden(s);
+      })
+      .catch(() => { /* overlay is best-effort */ });
+    return () => { alive = false; };
+  }, [briefKey]);
+  const hide = (source: string, ref: string) => setHidden((prev) => new Set(prev).add(`${source}:${ref}`));
+  return { hidden, hide };
+}
 
 interface CenterStageProps {
   mode: Mode;
@@ -252,7 +281,9 @@ function Dashboard({
   const [showAttention, setShowAttention] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
   const [newTask, setNewTask] = useState('');
-  const attentionItems = (brief?.inbox ?? []).filter((i) => i.needsAttention);
+  const { hidden, hide } = useTriageOverlay(brief?.generated_at);
+  const [deferredIds, setDeferredIds] = useState<Set<number>>(new Set());
+  const attentionItems = (brief?.inbox ?? []).filter((i) => i.needsAttention && !hidden.has(`${i.source}:${i.ref}`));
   const today = new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase();
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
@@ -260,7 +291,7 @@ function Dashboard({
   const connected = brief?.sources?.filter((s) => s.ok).length ?? 0;
   const inboxCount = brief?.inbox?.length ?? 0;
   const replyCount = brief?.replies?.length ?? 0;
-  const needsYou = brief?.needs_attention ?? brief?.inbox?.filter((i) => i.needsAttention).length ?? 0;
+  const needsYou = attentionItems.length;
   return (
     <div className="w-full max-w-5xl mx-auto px-6 md:px-10 py-10">
       <div className="flex items-end justify-between gap-6 mb-4 flex-wrap">
@@ -308,7 +339,8 @@ function Dashboard({
         <Metric icon={<Gauge className="w-4 h-4" />} color={'solent-mint' as const} value={`${connected}`} sub="/3" label="Sources connected" tag={connected ? 'online' : 'connect'} />
       </div>
 
-      {/* Expanded attention queue — every flagged item, clickable for full context */}
+      {/* Expanded attention queue — every flagged item, clickable for full context.
+          Every row carries universal triage: ✓ sorted or defer, reflected system-wide. */}
       {showAttention && attentionItems.length > 0 && (
         <section className="mb-4 rounded-xl border border-solent-orange/25 bg-solent-orange/[.03] overflow-hidden">
           <div className="px-4 py-2.5 border-b border-solent-orange/20 flex items-center gap-2">
@@ -316,10 +348,13 @@ function Dashboard({
             <h2 className="text-xs font-semibold text-zinc-200">Needs you — click any item for full context</h2>
           </div>
           {attentionItems.map((it, i) => (
-            <button
+            <div
               key={`${it.source}-${it.ref}-${i}`}
               onClick={() => onInspect(it)}
-              className="w-full flex items-start gap-3 px-4 py-2.5 border-b border-solent-border/30 last:border-0 text-left hover:bg-white/[.03] transition-colors"
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter') onInspect(it); }}
+              className="w-full flex items-start gap-3 px-4 py-2.5 border-b border-solent-border/30 last:border-0 text-left hover:bg-white/[.03] transition-colors cursor-pointer"
             >
               <span className={`mt-0.5 w-5 h-5 rounded grid place-items-center shrink-0 text-[9px] ${SOURCE_TONE[it.source]}`}>{SOURCE_ICON[it.source]}</span>
               <span className="min-w-0 flex-1">
@@ -330,11 +365,15 @@ function Dashboard({
                 </span>
                 <span className="block text-[10px] text-solent-muted mt-0.5 line-clamp-1">{it.text}</span>
               </span>
+              <TriageActions target={{ source: it.source, ref: it.ref }} onDone={() => hide(it.source, it.ref)} />
               <ChevronRight className="w-3.5 h-3.5 text-solent-dim shrink-0 mt-1" />
-            </button>
+            </div>
           ))}
         </section>
       )}
+
+      {/* Deferred shelf — everything snoozed, with when it comes back */}
+      <DeferredShelf refreshKey={brief?.generated_at ?? 0} />
 
       {/* Open loops — commitments in flight, derived from every pass */}
       <div className="mb-4"><OpenLoops refreshKey={brief?.generated_at ?? 0} onDraft={onSend} /></div>
@@ -384,12 +423,15 @@ function Dashboard({
                 <p className="text-solent-dim text-xs">No priorities yet. Run the brief — real tasks land here from your sources.</p>
               </div>
             )}
-            {tasks.map((task) => (
-              <motion.button
+            {tasks.filter((t) => !deferredIds.has(t.id)).map((task) => (
+              <motion.div
                 layout
                 key={task.id}
                 onClick={() => onToggleTask(task.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3.5 border-b border-solent-border/40 text-left hover:bg-white/[.02] transition-colors ${task.done ? 'opacity-50' : ''}`}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === 'Enter') onToggleTask(task.id); }}
+                className={`w-full flex items-center gap-3 px-4 py-3.5 border-b border-solent-border/40 text-left hover:bg-white/[.02] transition-colors cursor-pointer ${task.done ? 'opacity-50' : ''}`}
               >
                 <span className={`w-5 h-5 grid place-items-center rounded border ${task.done ? 'border-solent-mint bg-solent-mint/10 text-solent-mint' : 'border-solent-border text-transparent'}`}>
                   {task.done ? <Check className="w-3 h-3" /> : <Circle className="w-4 h-4" />}
@@ -398,9 +440,10 @@ function Dashboard({
                   <span className={`block text-xs font-medium truncate ${task.done ? 'line-through text-solent-muted' : 'text-zinc-300'}`}>{task.title}</span>
                   <span className="block text-[10px] text-solent-dim mt-0.5">{task.context}</span>
                 </span>
+                {!task.done && <TaskDefer taskId={task.id} onDeferred={() => setDeferredIds((s) => new Set(s).add(task.id))} />}
                 <time className="text-[10px] font-mono text-solent-dim">{task.time}</time>
                 <ChevronRight className="w-4 h-4 text-solent-border" />
-              </motion.button>
+              </motion.div>
             ))}
           </div>
           <div className="h-10 flex items-center justify-between px-4 text-[10px] text-solent-dim">
@@ -511,18 +554,99 @@ function Metric({ icon, color, value, sub, label, tag }: { icon: React.ReactNode
   );
 }
 
+/**
+ * DEFERRED SHELF — everything snoozed via universal triage, with when it
+ * comes back. Items wake automatically; "bring back" reopens one now.
+ */
+function DeferredShelf({ refreshKey }: { refreshKey: number | string }) {
+  const [items, setItems] = useState<DeferredItem[]>([]);
+  const [open, setOpen] = useState(false);
+  const load = () => { fetchDeferredItems().then(setItems).catch(() => {}); };
+  useEffect(load, [refreshKey]);
+  if (items.length === 0) return null;
+  return (
+    <section className="mb-4 rounded-xl border border-solent-border bg-solent-surface/70 overflow-hidden">
+      <button onClick={() => setOpen((v) => !v)} className="w-full px-4 py-2.5 flex items-center gap-2 text-left hover:bg-white/[.02] transition-colors">
+        <Clock3 className="w-3.5 h-3.5 text-solent-orange" />
+        <span className="text-xs font-semibold text-zinc-300">Deferred</span>
+        <span className="px-1.5 py-0.5 rounded bg-solent-orange/10 text-[9px] font-mono text-solent-orange">{items.length}</span>
+        <span className="ml-auto text-[9px] font-mono text-solent-dim">{open ? 'hide ▴' : 'show ▾'}</span>
+      </button>
+      {open && items.map((it) => (
+        <div key={it.id} className="flex items-start gap-3 px-4 py-2.5 border-t border-solent-border/30">
+          <span className="min-w-0 flex-1">
+            <span className="block text-[11px] text-zinc-300 truncate">{it.from_name ?? it.source}{it.channel ? ` · ${it.channel}` : ''}</span>
+            <span className="block text-[10px] text-solent-muted line-clamp-1 mt-0.5">{it.title || it.text}</span>
+          </span>
+          <span className="text-[9px] font-mono text-solent-dim shrink-0 mt-0.5">
+            {it.deferred_until && it.deferred_until < 4102444800000
+              ? `back ${new Date(it.deferred_until).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}`
+              : 'someday'}
+          </span>
+          <button
+            onClick={async () => { try { await triageItemRemote(it.id, 'reopen'); load(); } catch { /* ignore */ } }}
+            className="shrink-0 text-[9px] font-mono text-solent-dim hover:text-solent-mint border border-solent-border rounded px-1.5 py-0.5 transition-colors"
+          >
+            bring back
+          </button>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+/** Defer button for tasks — snoozes via /api/tasks/:id/defer, removed from the queue until it wakes. */
+function TaskDefer({ taskId, onDeferred }: { taskId: number; onDeferred: () => void }) {
+  const [open, setOpen] = useState(false);
+  const choices: { id: DeferChoice; label: string }[] = [
+    { id: '3h', label: 'In 3 hours' },
+    { id: 'tomorrow', label: 'Tomorrow 9am' },
+    { id: 'nextweek', label: 'Next week' },
+    { id: 'indefinite', label: 'Someday' },
+  ];
+  return (
+    <span className="relative shrink-0" onClick={(e) => e.stopPropagation()}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title="Defer this task"
+        className="px-1.5 py-0.5 rounded border border-solent-border text-[9px] font-mono uppercase tracking-wider text-solent-dim hover:text-solent-orange hover:border-solent-orange/40 transition-colors"
+      >
+        defer ▾
+      </button>
+      {open && (
+        <span className="absolute right-0 top-full mt-1 z-[80] min-w-[120px] rounded-lg border border-solent-border bg-solent-surface-2 shadow-xl overflow-hidden block">
+          {choices.map((c) => (
+            <button
+              key={c.id}
+              onClick={async () => {
+                setOpen(false);
+                try { await deferTaskRemote(taskId, c.id); onDeferred(); } catch { /* ignore */ }
+              }}
+              className="w-full text-left px-3 py-1.5 text-[10px] text-solent-muted hover:text-solent-orange hover:bg-solent-surface-3 transition-colors font-mono block"
+            >
+              {c.label}
+            </button>
+          ))}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function ReceiveView({
   brief, briefRunning, onRunBrief, onOpenSources, onSend, onInspect,
 }: {
   brief: Brief | null; briefRunning: boolean; onRunBrief: () => void; onOpenSources: () => void; onSend: (text: string) => void; onInspect: (item: InboxItem) => void;
 }) {
   const [filter, setFilter] = useState<'all' | 'attention' | 'pumble' | 'gmail' | 'zoho'>('all');
+  const { hidden, hide } = useTriageOverlay(brief?.generated_at);
   const inbox: InboxItem[] = (brief?.inbox ?? [])
+    .filter((i) => !hidden.has(`${i.source}:${i.ref}`))
     .filter((i) => (filter === 'all' ? true : filter === 'attention' ? i.needsAttention : i.source === filter))
     .slice()
     .sort((a, b) => Number(!!b.needsAttention) - Number(!!a.needsAttention));
   const anyConfigured = brief?.sources?.some((s) => s.configured) ?? false;
-  const attnCount = (brief?.inbox ?? []).filter((i) => i.needsAttention).length;
+  const attnCount = (brief?.inbox ?? []).filter((i) => i.needsAttention && !hidden.has(`${i.source}:${i.ref}`)).length;
 
   return (
     <div className="w-full max-w-4xl mx-auto px-6 md:px-10 py-10 pb-40">
@@ -629,13 +753,16 @@ function ReceiveView({
               </div>
               <p className="text-[11px] text-solent-muted leading-relaxed mt-0.5 line-clamp-2">{item.text}</p>
             </div>
-            <button
-              onClick={(e) => { e.stopPropagation(); onSend(`Draft a reply to this ${item.source} message from ${item.from} (${item.title}): "${item.text}"`); }}
-              className="shrink-0 text-[9px] font-mono text-solent-dim hover:text-solent-mint transition-colors mt-0.5"
-              title="Draft a reply with CONDUCTOR"
-            >
-              reply →
-            </button>
+            <div className="flex items-center gap-2 shrink-0 mt-0.5">
+              <button
+                onClick={(e) => { e.stopPropagation(); onSend(`Draft a reply to this ${item.source} message from ${item.from} (${item.title}): "${item.text}"`); }}
+                className="text-[9px] font-mono text-solent-dim hover:text-solent-mint transition-colors"
+                title="Draft a reply with CONDUCTOR"
+              >
+                reply →
+              </button>
+              <TriageActions target={{ source: item.source, ref: item.ref }} onDone={() => hide(item.source, item.ref)} />
+            </div>
           </div>
         ))}
       </section>

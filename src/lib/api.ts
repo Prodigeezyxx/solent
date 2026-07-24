@@ -354,6 +354,8 @@ export interface PaneItem {
   flag?: boolean;
   done?: boolean;
   ts?: number;
+  /** Row is backed by the items table — show universal triage (sorted/defer). */
+  triage?: boolean;
 }
 export interface PaneSection {
   key: string;
@@ -401,6 +403,88 @@ export async function addDecisionRemote(title: string, rationale: string): Promi
     body: JSON.stringify({ title, rationale }),
   });
   if (!res.ok) throw new Error('decision add failed');
+}
+
+// ---- Universal triage -------------------------------------------------------------
+// Every prompt/message/notice can be marked sorted (dealt with) or deferred.
+// One state in D1, reflected system-wide. Zero model credits.
+
+export type TriageAction = 'sorted' | 'deferred' | 'reopen';
+export type DeferChoice = '3h' | 'tomorrow' | 'nextweek' | 'indefinite';
+
+export const DEFER_CHOICES: { id: DeferChoice; label: string }[] = [
+  { id: '3h', label: 'In 3 hours' },
+  { id: 'tomorrow', label: 'Tomorrow 9am' },
+  { id: 'nextweek', label: 'Next week' },
+  { id: 'indefinite', label: 'Someday' },
+];
+
+export interface TriageCounts {
+  open_attention: number;
+  deferred: number;
+  sorted_today: number;
+}
+
+export interface TriageOverlayData {
+  overlay: Record<string, { status: string; itemId: number }>;
+  counts: TriageCounts;
+}
+
+export async function triageItemRemote(id: number, action: TriageAction, defer?: DeferChoice): Promise<void> {
+  const res = await fetch(`/api/triage/item/${id}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, defer }),
+  });
+  if (!res.ok) throw new Error('triage failed');
+}
+
+export async function triageRefRemote(source: string, ref: string, action: TriageAction, defer?: DeferChoice): Promise<void> {
+  const res = await fetch('/api/triage/ref', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source, ref, action, defer }),
+  });
+  if (!res.ok) throw new Error('triage failed');
+}
+
+export async function fetchTriageOverlay(): Promise<TriageOverlayData> {
+  const res = await fetch('/api/triage/overlay');
+  if (!res.ok) throw new Error('overlay failed');
+  return (await res.json()) as TriageOverlayData;
+}
+
+export interface DeferredItem {
+  id: number;
+  source: string;
+  channel?: string | null;
+  from_name?: string | null;
+  title?: string | null;
+  text?: string | null;
+  attention_reason?: string | null;
+  deferred_until?: number | null;
+  triaged_at?: number | null;
+}
+
+export async function fetchDeferredItems(): Promise<DeferredItem[]> {
+  const res = await fetch('/api/triage/deferred');
+  if (!res.ok) throw new Error('deferred failed');
+  const data = (await res.json()) as { items: DeferredItem[] };
+  return data.items ?? [];
+}
+
+export async function deferTaskRemote(id: number, defer: DeferChoice): Promise<void> {
+  const res = await fetch(`/api/tasks/${id}/defer`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ defer }),
+  });
+  if (!res.ok) throw new Error('task defer failed');
+}
+
+export async function undeferTaskRemote(id: number): Promise<void> {
+  const res = await fetch(`/api/tasks/${id}/undefer`, { method: 'POST' });
+  if (!res.ok) throw new Error('task undefer failed');
 }
 
 // ---- Usage / credits --------------------------------------------------------------

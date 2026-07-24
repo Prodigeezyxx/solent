@@ -100,9 +100,10 @@ function briefSystem(s: Settings): string {
     'If an OPERATOR CONTEXT LIBRARY block is present, treat it as ground truth about the business. ' +
     'If OPEN LOOPS are present, oldest unresolved commitments deserve priority — nag about anything > 2 days old. ' +
     'In ONE pass, produce their executive brief as strict JSON. Rules: be ruthless about priority — only genuinely actionable items ' +
-    'become priorities (max 6). Ignore newsletters, notifications, and noise. Suggested replies only for ' +
-    `messages that clearly await ${name} (max 3, ≤60 words each, their voice: warm, precise, outcome-driven). ` +
-    'Signals are patterns worth knowing, not tasks (max 4). Reference items by their [source:n] tag in source_ref. ' +
+    'become priorities (up to 10 when the inbox genuinely warrants it). Ignore newsletters, notifications, and noise. Suggested replies for ' +
+    `every message that clearly awaits ${name} (up to 5, ≤80 words each, their voice: warm, precise, outcome-driven). ` +
+    'Signals are patterns worth knowing, not tasks (up to 6 — cross-reference threads, spot trends across sources). Reference items by their [source:n] tag in source_ref. ' +
+    'Think deeply: connect related items across Pumble/Gmail/Zoho, surface commitments implied but not stated, and flag anything time-sensitive. ' +
     'Respond ONLY with JSON matching: {"headline": string (≤90 chars, the single most important thing), ' +
     '"summary": string (≤80 words, the shape of the day), ' +
     '"priorities": [{"title": string, "context": string, "urgency": "high"|"medium"|"low", "source_ref": string}], ' +
@@ -152,7 +153,7 @@ async function callModel(apiKey: string, model: string, system: string, user: st
   const payload: Record<string, unknown> = {
     model,
     temperature: 0.2,
-    max_tokens: 2400,
+    max_tokens: 4000,
     usage: { include: true }, // OpenRouter: return exact cost accounting with the response
     messages: [
       { role: 'system', content: system },
@@ -296,9 +297,9 @@ export async function runBrief(env: Env, opts: { force?: boolean } = {}): Promis
       model,
       headline: String(parsed.headline ?? '').slice(0, 140),
       summary: String(parsed.summary ?? ''),
-      priorities: Array.isArray(parsed.priorities) ? parsed.priorities.slice(0, 6) : [],
-      signals: Array.isArray(parsed.signals) ? parsed.signals.slice(0, 4) : [],
-      replies: Array.isArray(parsed.replies) ? parsed.replies.slice(0, 3) : [],
+      priorities: Array.isArray(parsed.priorities) ? parsed.priorities.slice(0, 10) : [],
+      signals: Array.isArray(parsed.signals) ? parsed.signals.slice(0, 6) : [],
+      replies: Array.isArray(parsed.replies) ? parsed.replies.slice(0, 5) : [],
     };
 
     await persistBrief(db, brief);

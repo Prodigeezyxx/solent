@@ -7,6 +7,7 @@ export interface TaskRow {
   time: string | null;
   done: number;
   priority: number;
+  deferred_until?: number | null;
   created_at: number;
   updated_at: number;
 }
@@ -22,10 +23,18 @@ export interface MemoryRow {
 const now = () => Date.now();
 
 export async function listTasks(db: D1Database): Promise<TaskRow[]> {
-  const { results } = await db
-    .prepare('SELECT * FROM tasks ORDER BY priority DESC, done ASC, created_at DESC')
-    .all<TaskRow>();
-  return results ?? [];
+  try {
+    const { results } = await db
+      .prepare('SELECT * FROM tasks WHERE deferred_until IS NULL ORDER BY priority DESC, done ASC, created_at DESC')
+      .all<TaskRow>();
+    return results ?? [];
+  } catch {
+    // pre-migration fallback
+    const { results } = await db
+      .prepare('SELECT * FROM tasks ORDER BY priority DESC, done ASC, created_at DESC')
+      .all<TaskRow>();
+    return results ?? [];
+  }
 }
 
 export async function createTask(db: D1Database, title: string, context?: string): Promise<TaskRow> {

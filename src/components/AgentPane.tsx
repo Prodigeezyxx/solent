@@ -8,6 +8,7 @@ import {
   saveDocRemote, streamChat, toggleTaskRemote, toggleVip,
   type AgentPane as PaneData, type PaneItem, type PaneSection,
 } from '../lib/api';
+import TriageActions from './TriageActions';
 
 /**
  * Agent workspace — every council member is a full feature surface.
@@ -198,11 +199,14 @@ function SectionRow({ item, kind, expanded, onExpand, onChanged, onToast, agentC
   onChanged: () => void; onToast: (t: string) => void; agentColor: string;
 }) {
   const [busy, setBusy] = useState(false);
+  const [gone, setGone] = useState(false);
 
   const act = async (fn: () => Promise<unknown>, msg: string) => {
     setBusy(true);
     try { await fn(); onToast(msg); onChanged(); } catch { onToast('Action failed'); } finally { setBusy(false); }
   };
+
+  if (gone) return null;
 
   return (
     <div className="border-b border-solent-border/30 last:border-0">
@@ -237,6 +241,12 @@ function SectionRow({ item, kind, expanded, onExpand, onChanged, onToast, agentC
         </button>
         <div className="flex items-center gap-2 shrink-0">
           {item.meta && <span className="text-[9px] font-mono text-solent-dim">{item.meta}</span>}
+          {item.triage && !gone && (
+            <TriageActions
+              target={{ itemId: Number(item.id) }}
+              onDone={(a) => { setGone(true); onToast(a === 'sorted' ? 'Sorted ✓ — reflected everywhere' : 'Deferred ⏰'); onChanged(); }}
+            />
+          )}
           {kind === 'usage' && item.detail && <span className="text-[10px] font-mono" style={{ color: agentColor }}>{expanded ? '' : item.detail}</span>}
           {kind === 'tasks' && (
             <button

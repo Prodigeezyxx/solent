@@ -208,8 +208,8 @@ function expandMentions(text: string, dir: PumbleDirectory): { text: string; men
 export async function fetchPumble(
   db: D1Database,
   s: Settings,
-  perChannel = 8,
-  maxChannels = 8,
+  perChannel = 12,
+  maxChannels = 10,
 ): Promise<{ result: SourceResult; people: PersonRecord[] }> {
   const key = s.PUMBLE_API_KEY;
   if (!key) return { result: { source: 'pumble', ok: false, configured: false, items: [] }, people: [] };
@@ -389,7 +389,7 @@ function prettifyLocalPart(local: string): string {
 export async function fetchGmail(
   db: D1Database,
   s: Settings,
-  max = 12,
+  max = 40,
 ): Promise<{ result: SourceResult; people: PersonRecord[] }> {
   if (!s.GMAIL_CLIENT_ID || !s.GMAIL_CLIENT_SECRET || !s.GMAIL_REFRESH_TOKEN) {
     return { result: { source: 'gmail', ok: false, configured: false, items: [] }, people: [] };
@@ -397,8 +397,11 @@ export async function fetchGmail(
   try {
     const token = await gmailAccessToken(db, s);
     const auth = { Authorization: `Bearer ${token}` };
+    // Lookback window: default 14 days, tunable via SOURCE_LOOKBACK_DAYS.
+    // Older items already persisted in D1 stay; each pass extends the record.
+    const lookback = Math.max(1, Math.min(60, Number(s.SOURCE_LOOKBACK_DAYS ?? 14)));
     const listRes = await fetch(
-      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent('in:inbox newer_than:2d -category:promotions -category:social')}&maxResults=${max}`,
+      `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(`in:inbox newer_than:${lookback}d -category:promotions -category:social`)}&maxResults=${max}`,
       { headers: auth },
     );
     const list = await safeJson(listRes);
@@ -487,7 +490,7 @@ async function zohoAccountId(db: D1Database, s: Settings, token: string): Promis
 export async function fetchZoho(
   db: D1Database,
   s: Settings,
-  max = 12,
+  max = 30,
 ): Promise<{ result: SourceResult; people: PersonRecord[] }> {
   if (!s.ZOHO_CLIENT_ID || !s.ZOHO_CLIENT_SECRET || !s.ZOHO_REFRESH_TOKEN) {
     return { result: { source: 'zoho', ok: false, configured: false, items: [] }, people: [] };
@@ -582,7 +585,7 @@ export async function persistPass(db: D1Database, results: SourceResult[], peopl
 }
 
 /** Compact, token-efficient digest for the single LLM pass, attention items first. */
-export function digestForPrompt(results: SourceResult[], maxItems = 40): string {
+export function digestForPrompt(results: SourceResult[], maxItems = 80): string {
   const lines: string[] = [];
   let i = 0;
   const ordered = results.map((r) => ({

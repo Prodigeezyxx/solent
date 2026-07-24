@@ -11,6 +11,7 @@ import { listDocs, getDoc, saveDoc, deleteDoc } from './docs';
 import { buildPane } from './panes';
 import { usageSummary } from './usage';
 import { logMemory, logDecision } from './db';
+import { deferTask, triageByRef, triageCounts, triageItem, triageOverlay, undeferTask, wakeDeferred, wakeDeferredTasks } from './triage';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -35,8 +36,9 @@ app.get('/api/brief', async (c) => {
 // Durable "needs you" items — zero-credit reads from the identity layer.
 app.get('/api/attention', async (c) => {
   try {
+    await wakeDeferred(c.env.DB); // deferred items whose time has come re-surface
     const { results } = await c.env.DB
-      .prepare('SELECT id, source, channel, from_name, title, text, ts, is_dm, mentions_me, attention_reason FROM items WHERE needs_attention = 1 AND seen = 0 ORDER BY created_at DESC LIMIT 30')
+      .prepare("SELECT id, source, channel, from_name, title, text, ts, is_dm, mentions_me, attention_reason FROM items WHERE needs_attention = 1 AND triage_status = 'open' ORDER BY created_at DESC LIMIT 30")
       .all();
     return c.json({ items: results ?? [] });
   } catch {
@@ -46,7 +48,59 @@ app.get('/api/attention', async (c) => {
 
 app.post('/api/attention/:id/seen', async (c) => {
   const id = Number(c.req.param('id'));
-  await c.env.DB.prepare('UPDATE items SET seen = 1 WHERE id = ?').bind(id).run();
+  await triageItem(c.env.DB, id, 'sorted');
+  return c.json({ ok: true });
+});
+
+// ---- UNIVERSAL TRIAGE ------------------------------------------------------
+// Every prompt/message/notice can be marked sorted (dealt with) or deferred
+// (snoozed) — one state, reflected system-wide. Zero-credit.
+app.post('/api/triage/item/:id', async (c) => {
+  const id = Number(c.req.param('id'));
+  const body = await c.req.json<{ action?: string; defer?: string }>().catch(() => ({} as any));
+  const action = body.action === 'sorted' || body.action === 'deferred' || body.action === 'reopen' ? body.action : null;
+  if (!action) return c.json({ error: 'action must be sorted|deferred|reopen' }, 400);
+  await triageItem(c.env.DB, id, action, body.defer);
+  return c.json({ ok: true, id, action });
+});
+
+// Triage by (source, ref) — for brief-inbox rows that only carry a ref.
+app.post('/api/triage/ref', async (c) => {
+  const body = await c.req.json<{ source?: string; ref?: string; action?: string; defer?: string }>().catch(() => ({} as any));
+  const action = body.action === 'sorted' || body.action === 'deferred' || body.action === 'reopen' ? body.action : null;
+  if (!body.source || !body.ref || !action) return c.json({ error: 'source, ref, action required' }, 400);
+  const id = await triageByRef(c.env.DB, body.source, body.ref, action, body.defer);
+  return c.json({ ok: true, id, action });
+});
+
+// Overlay: source:ref -> triage state, so the UI can hide sorted/deferred
+// rows that came from the (cached) brief inbox.
+app.get('/api/triage/overlay', async (c) => {
+  await wakeDeferred(c.env.DB);
+  const [overlay, counts] = await Promise.all([triageOverlay(c.env.DB), triageCounts(c.env.DB)]);
+  return c.json({ overlay, counts });
+});
+
+// Deferred shelf: everything snoozed, with when it comes back.
+app.get('/api/triage/deferred', async (c) => {
+  try {
+    const { results } = await c.env.DB
+      .prepare("SELECT id, source, channel, from_name, title, text, attention_reason, deferred_until, triaged_at FROM items WHERE triage_status = 'deferred' ORDER BY COALESCE(deferred_until, 9e15) ASC LIMIT 50")
+      .all();
+    return c.json({ items: results ?? [] });
+  } catch {
+    return c.json({ items: [] });
+  }
+});
+
+app.post('/api/tasks/:id/defer', async (c) => {
+  const body = await c.req.json<{ defer?: string }>().catch(() => ({} as any));
+  await deferTask(c.env.DB, Number(c.req.param('id')), body.defer ?? 'tomorrow');
+  return c.json({ ok: true });
+});
+
+app.post('/api/tasks/:id/undefer', async (c) => {
+  await undeferTask(c.env.DB, Number(c.req.param('id')));
   return c.json({ ok: true });
 });
 
@@ -239,6 +293,7 @@ app.post('/api/settings', async (c) => {
 // Lightweight health/state snapshot the UI can poll.
 app.get('/api/state', async (c) => {
   const db = c.env.DB;
+  await wakeDeferredTasks(db);
   const tasks = await listTasks(db);
   const memories = await recentMemories(db, 5);
   return c.json({
