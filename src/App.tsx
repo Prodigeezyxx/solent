@@ -75,16 +75,30 @@ function App() {
   }, []);
 
   // Boot: load real tasks + the cached brief (GET path — zero credits).
+  // Then keep it LIVE: re-poll every 3 minutes (and on tab refocus). The
+  // worker's stale-while-revalidate path re-pulls sources for free, so a new
+  // Zoho/Gmail/Pumble item is never invisible for more than a few minutes.
   useEffect(() => {
     refreshTasks();
-    fetchBrief()
-      .then((b) => {
-        setBrief(b);
-        refreshTasks();
-      })
-      .catch(() => {
-        /* worker offline — UI still usable */
-      });
+    const pull = () =>
+      fetchBrief()
+        .then((b) => {
+          setBrief(b);
+          refreshTasks();
+        })
+        .catch(() => {
+          /* worker offline — UI still usable */
+        });
+    pull();
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') pull();
+    }, 3 * 60_000);
+    const onFocus = () => { if (document.visibilityState === 'visible') pull(); };
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
   }, [refreshTasks]);
 
   // The ONE-SHOT pass: pull Pumble + Gmail + Zoho, one model call, done.

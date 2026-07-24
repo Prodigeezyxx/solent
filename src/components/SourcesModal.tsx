@@ -41,8 +41,8 @@ const GROUPS: { id: string; title: string; hint: string; fields: FieldDef[] }[] 
   },
   {
     id: 'gmail',
-    title: 'Gmail — personal inbox',
-    hint: 'Google Cloud OAuth client (Gmail API, scope gmail.readonly) + a refresh token from the OAuth consent flow.',
+    title: 'Gmail + Google Calendar — personal inbox & schedule',
+    hint: 'One Google OAuth client powers BOTH. Scopes: gmail.readonly + calendar.readonly. If Calendar shows a scope error, re-run the OAuth consent flow with calendar.readonly added (same client ID/secret) and paste the new refresh token here.',
     fields: [
       { key: 'GMAIL_CLIENT_ID', label: 'Client ID' },
       { key: 'GMAIL_CLIENT_SECRET', label: 'Client secret', secret: true },
@@ -66,7 +66,8 @@ const GROUPS: { id: string; title: string; hint: string; fields: FieldDef[] }[] 
     hint: 'OpenRouter key. ONE model call per pass, cached. Pick a preset below or type any OpenRouter slug — JSON parsing tolerates every model.',
     fields: [
       { key: 'OPENROUTER_API_KEY', label: 'OpenRouter API key', secret: true },
-      { key: 'BRIEF_TTL_MINUTES', label: 'Cache window, minutes (default 30)', placeholder: '30' },
+      { key: 'BRIEF_TTL_MINUTES', label: 'LLM cache window, minutes (default 30)', placeholder: '30' },
+      { key: 'BRIEF_FRESHNESS_MINUTES', label: 'Inbox freshness, minutes (default 3, zero-credit)', placeholder: '3' },
     ],
   },
 ];

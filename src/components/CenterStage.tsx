@@ -229,12 +229,14 @@ const SOURCE_ICON: Record<string, React.ReactNode> = {
   pumble: <MessageSquare className="w-3 h-3" />,
   gmail: <Mail className="w-3 h-3" />,
   zoho: <Mail className="w-3 h-3" />,
+  gcal: <CalendarDays className="w-3 h-3" />,
 };
 
 const SOURCE_TONE: Record<string, string> = {
   pumble: 'text-solent-purple bg-solent-purple/10',
   gmail: 'text-solent-orange bg-solent-orange/10',
   zoho: 'text-solent-blue bg-solent-blue/10',
+  gcal: 'text-solent-mint bg-solent-mint/10',
 };
 
 function SourceChips({ brief, onOpenSources }: { brief: Brief | null; onOpenSources: () => void }) {
@@ -242,6 +244,7 @@ function SourceChips({ brief, onOpenSources }: { brief: Brief | null; onOpenSour
     { source: 'pumble', configured: false, ok: false, count: 0 },
     { source: 'gmail', configured: false, ok: false, count: 0 },
     { source: 'zoho', configured: false, ok: false, count: 0 },
+    { source: 'gcal', configured: false, ok: false, count: 0 },
   ];
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
@@ -638,7 +641,7 @@ function ReceiveView({
 }: {
   brief: Brief | null; briefRunning: boolean; onRunBrief: () => void; onOpenSources: () => void; onSend: (text: string) => void; onInspect: (item: InboxItem) => void;
 }) {
-  const [filter, setFilter] = useState<'all' | 'attention' | 'pumble' | 'gmail' | 'zoho'>('all');
+  const [filter, setFilter] = useState<'all' | 'attention' | 'pumble' | 'gmail' | 'zoho' | 'gcal'>('all');
   const { hidden, hide } = useTriageOverlay(brief?.generated_at);
   const inbox: InboxItem[] = (brief?.inbox ?? [])
     .filter((i) => !hidden.has(`${i.source}:${i.ref}`))
@@ -694,7 +697,7 @@ function ReceiveView({
       )}
 
       <div className="flex items-center gap-1 mb-3">
-        {(['all', 'attention', 'pumble', 'gmail', 'zoho'] as const).map((f) => (
+        {(['all', 'attention', 'pumble', 'gmail', 'zoho', 'gcal'] as const).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}

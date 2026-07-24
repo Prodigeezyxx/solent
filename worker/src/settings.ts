@@ -30,6 +30,7 @@ export const SETTING_KEYS = [
   'OPERATOR_CONTEXT', // e.g. "Founder of Floats XR and realmspace; priorities: GTM partnerships, product velocity"
   // Behaviour
   'BRIEF_TTL_MINUTES', // cache window for the one-shot brief (default 30)
+  'BRIEF_FRESHNESS_MINUTES', // zero-LLM source refresh window inside the TTL (default 3)
   'SOURCE_LOOKBACK_DAYS', // how far back email sources scan (default 14, max 60)
 ] as const;
 

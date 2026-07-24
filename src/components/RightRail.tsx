@@ -13,6 +13,7 @@ const SOURCE_COLOR: Record<string, string> = {
   pumble: '#a78bfa',
   gmail: '#fb923c',
   zoho: '#38bdf8',
+  gcal: '#34d399',
 };
 
 export default function RightRail({ agent, open = true, onClose, brief }: RightRailProps) {

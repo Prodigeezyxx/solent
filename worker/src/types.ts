@@ -18,6 +18,7 @@ export interface Env {
   OPERATOR_NAME?: string;
   OPERATOR_CONTEXT?: string;
   BRIEF_TTL_MINUTES?: string;
+  BRIEF_FRESHNESS_MINUTES?: string;
   SOURCE_LOOKBACK_DAYS?: string;
 }
 

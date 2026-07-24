@@ -18,8 +18,10 @@ import { cacheToken, getCachedToken, type Settings } from './settings';
  *     triage call.
  */
 
+export type SourceName = 'pumble' | 'gmail' | 'zoho' | 'gcal';
+
 export interface SourceItem {
-  source: 'pumble' | 'gmail' | 'zoho';
+  source: SourceName;
   ref: string;
   channel: string; // "#general", "DM", "Inbox"
   from: string; // resolved human name
@@ -34,7 +36,7 @@ export interface SourceItem {
 }
 
 export interface SourceResult {
-  source: 'pumble' | 'gmail' | 'zoho';
+  source: SourceName;
   ok: boolean;
   configured: boolean;
   error?: string;
@@ -44,7 +46,7 @@ export interface SourceResult {
 }
 
 export interface OutboundAsk {
-  source: 'pumble' | 'gmail' | 'zoho';
+  source: SourceName;
   ref: string;
   channel: string;
   counterparty: string;
@@ -336,7 +338,12 @@ export async function fetchPumble(
 // GMAIL
 // ---------------------------------------------------------------------------
 
-async function gmailAccessToken(db: D1Database, s: Settings): Promise<string> {
+/**
+ * One Google access token serves BOTH Gmail and Calendar — the scopes live
+ * on the refresh token, so a token minted with gmail.readonly +
+ * calendar.readonly unlocks both APIs from the same credentials.
+ */
+async function googleAccessToken(db: D1Database, s: Settings): Promise<string> {
   const cached = await getCachedToken(db, 'gmail');
   if (cached) return cached;
   const res = await fetch('https://oauth2.googleapis.com/token', {
@@ -395,7 +402,7 @@ export async function fetchGmail(
     return { result: { source: 'gmail', ok: false, configured: false, items: [] }, people: [] };
   }
   try {
-    const token = await gmailAccessToken(db, s);
+    const token = await googleAccessToken(db, s);
     const auth = { Authorization: `Bearer ${token}` };
     // Lookback window: default 14 days, tunable via SOURCE_LOOKBACK_DAYS.
     // Older items already persisted in D1 stay; each pass extends the record.
@@ -536,6 +543,117 @@ export async function fetchZoho(
 }
 
 // ---------------------------------------------------------------------------
+// GOOGLE CALENDAR — same OAuth client as Gmail, needs calendar.readonly scope
+// ---------------------------------------------------------------------------
+
+/** "2026-07-24T14:00:00+01:00" → "Thu 14:00"; all-day dates → "Thu (all day)". */
+function fmtEventTime(start?: { dateTime?: string; date?: string }, end?: { dateTime?: string; date?: string }): string {
+  if (start?.dateTime) {
+    const s = new Date(start.dateTime);
+    const e = end?.dateTime ? new Date(end.dateTime) : null;
+    const day = s.toUTCString().slice(0, 3);
+    const hm = (d: Date) => d.toISOString().slice(11, 16);
+    return e ? `${day} ${hm(s)}–${hm(e)} UTC` : `${day} ${hm(s)} UTC`;
+  }
+  if (start?.date) return `${new Date(`${start.date}T00:00:00Z`).toUTCString().slice(0, 3)} ${start.date} (all day)`;
+  return '';
+}
+
+export async function fetchGcal(
+  db: D1Database,
+  s: Settings,
+  max = 20,
+): Promise<{ result: SourceResult; people: PersonRecord[] }> {
+  // Reuses the Gmail OAuth client — configured whenever Gmail is.
+  if (!s.GMAIL_CLIENT_ID || !s.GMAIL_CLIENT_SECRET || !s.GMAIL_REFRESH_TOKEN) {
+    return { result: { source: 'gcal', ok: false, configured: false, items: [] }, people: [] };
+  }
+  try {
+    const token = await googleAccessToken(db, s);
+    const now = new Date();
+    const horizon = new Date(now.getTime() + 7 * 86400_000); // week ahead
+    const url =
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events?` +
+      new URLSearchParams({
+        timeMin: now.toISOString(),
+        timeMax: horizon.toISOString(),
+        singleEvents: 'true',
+        orderBy: 'startTime',
+        maxResults: String(max),
+      });
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    const json = await safeJson(res);
+    if (res.status === 403) {
+      // Token exists but lacks calendar.readonly — actionable, not fatal.
+      throw new Error('Calendar scope missing — re-mint the Google refresh token with calendar.readonly added');
+    }
+    if (!res.ok) throw new Error(`Calendar failed: ${json.error?.message ?? res.status}`);
+
+    const people = new Map<string, PersonRecord>();
+    const soonMs = 4 * 3600_000; // events starting within 4h are attention-worthy
+    const todayKey = now.toISOString().slice(0, 10);
+
+    const items: SourceItem[] = (json.items ?? [])
+      .filter((ev: any) => ev.status !== 'cancelled')
+      .map((ev: any) => {
+        const startIso = ev.start?.dateTime ?? (ev.start?.date ? `${ev.start.date}T00:00:00Z` : '');
+        const startMs = startIso ? new Date(startIso).getTime() : NaN;
+        const organizer = parseAddress(String(ev.organizer?.displayName || ev.organizer?.email || 'calendar'));
+        if (ev.organizer?.email) {
+          people.set(ev.organizer.email.toLowerCase(), {
+            source: 'gcal', extId: ev.organizer.email.toLowerCase(),
+            name: ev.organizer.displayName || organizer.name, email: ev.organizer.email.toLowerCase(),
+          });
+        }
+        const attendees: string[] = (ev.attendees ?? [])
+          .filter((a: any) => !a.self)
+          .slice(0, 6)
+          .map((a: any) => {
+            const email = String(a.email ?? '').toLowerCase();
+            const name = a.displayName || (email ? prettifyLocalPart(email.split('@')[0]) : 'guest');
+            if (email) people.set(email, { source: 'gcal', extId: email, name, email });
+            return a.responseStatus === 'declined' ? `${name} (declined)` : name;
+          });
+        const needsResponse = (ev.attendees ?? []).some((a: any) => a.self && a.responseStatus === 'needsAction');
+        const isToday = startIso.slice(0, 10) === todayKey;
+        const startsSoon = Number.isFinite(startMs) && startMs - now.getTime() < soonMs && startMs >= now.getTime();
+
+        const when = fmtEventTime(ev.start, ev.end);
+        const bits = [
+          when,
+          attendees.length ? `with ${attendees.join(', ')}` : '',
+          ev.location ? `at ${strip(String(ev.location))}` : '',
+          ev.hangoutLink ? `meet: ${ev.hangoutLink}` : '',
+          ev.description ? clip(strip(String(ev.description)), 120) : '',
+        ].filter(Boolean);
+
+        const reasons: string[] = [];
+        if (needsResponse) reasons.push('awaiting your RSVP');
+        if (startsSoon) reasons.push('starts soon');
+        else if (isToday) reasons.push('today');
+
+        return {
+          source: 'gcal' as const,
+          ref: String(ev.id ?? ''),
+          channel: 'Calendar',
+          from: ev.organizer?.displayName || organizer.name,
+          fromId: ev.organizer?.email?.toLowerCase(),
+          title: clip(strip(String(ev.summary ?? '(untitled event)')), 140),
+          text: clip(bits.join(' · '), 280),
+          ts: startIso,
+          isDm: false,
+          mentionsMe: needsResponse,
+          needsAttention: reasons.length > 0,
+          attentionReason: reasons.length ? reasons.slice(0, 2).join(' + ') : undefined,
+        };
+      });
+    return { result: { source: 'gcal', ok: true, configured: true, items }, people: [...people.values()] };
+  } catch (e) {
+    return { result: { source: 'gcal', ok: false, configured: true, error: (e as Error).message, items: [] }, people: [] };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // One parallel pass + durable persistence
 // ---------------------------------------------------------------------------
 
@@ -543,8 +661,8 @@ export async function fetchAllSources(
   db: D1Database,
   s: Settings,
 ): Promise<{ results: SourceResult[]; people: PersonRecord[] }> {
-  const [p, g, z] = await Promise.all([fetchPumble(db, s), fetchGmail(db, s), fetchZoho(db, s)]);
-  return { results: [p.result, g.result, z.result], people: [...p.people, ...g.people, ...z.people] };
+  const [p, g, z, c] = await Promise.all([fetchPumble(db, s), fetchGmail(db, s), fetchZoho(db, s), fetchGcal(db, s)]);
+  return { results: [p.result, g.result, z.result, c.result], people: [...p.people, ...g.people, ...z.people, ...c.people] };
 }
 
 /** Upsert people + items into the durable layer. Batched, cheap. */

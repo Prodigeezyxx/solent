@@ -209,7 +209,7 @@ export async function buildGraph(db: D1Database): Promise<Graph> {
       const dup = [...nodes.values()].some((n) => n.type === 'task' && n.label.toLowerCase() === clip(t.title, 48).toLowerCase());
       if (dup) continue;
       const id = `task:${t.id}`;
-      const src = (t.context ?? '').match(/\b(pumble|gmail|zoho)\b/i)?.[1]?.toLowerCase();
+      const src = (t.context ?? '').match(/\b(pumble|gmail|zoho|gcal)\b/i)?.[1]?.toLowerCase();
       addNode({ id, type: 'task', label: clip(t.title, 48), detail: t.done ? 'done' : t.context ?? 'open', weight: t.done ? 2 : 3.5, ts: t.created_at, group: src ?? undefined });
       addEdge(src && nodes.has(`source:${src}`) ? `source:${src}` : 'hub', id, 'derived');
     }

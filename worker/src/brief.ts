@@ -45,6 +45,8 @@ export interface BriefReply {
 
 export interface Brief {
   generated_at: number;
+  /** Last zero-LLM source refresh — inbox is never older than this. */
+  refreshed_at?: number;
   cached: boolean;
   summary: string;
   headline: string;
@@ -95,7 +97,8 @@ function briefSystem(s: Settings): string {
   return (
     `You are CONDUCTOR, the executive function layer for ${name}.` +
     (ctx ? ` Operator context: ${ctx}.` : '') +
-    ' You receive a raw digest of their real work signals (Pumble team chat, Gmail personal inbox, Zoho company inbox). ' +
+    ' You receive a raw digest of their real work signals (Pumble team chat, Gmail personal inbox, Zoho company inbox, Google Calendar schedule). ' +
+    'GCAL items are upcoming events — weave them into the day’s shape: flag conflicts with priorities, prep needed before meetings, and RSVPs awaiting a response. ' +
     'Items flagged DM, MENTIONS-YOU, or ATTN(...) were pre-screened as likely needing the operator — weigh them heavily. ' +
     'If an OPERATOR CONTEXT LIBRARY block is present, treat it as ground truth about the business. ' +
     'If OPEN LOOPS are present, oldest unresolved commitments deserve priority — nag about anything > 2 days old. ' +
@@ -194,14 +197,55 @@ async function callModel(apiKey: string, model: string, system: string, user: st
   }
 }
 
+/**
+ * ZERO-LLM SOURCE REFRESH (stale-while-revalidate).
+ *
+ * The LLM analysis (headline/priorities/replies) is cached for BRIEF_TTL_MINUTES,
+ * but the INBOX must never go stale — a new email arriving mid-window has to
+ * surface immediately. When a cached brief's sources are older than the
+ * freshness window (BRIEF_FRESHNESS_MINUTES, default 3), we re-pull all
+ * sources for free, persist new items (so attention/triage/graph see them),
+ * and merge the fresh inbox into the cached brief — no model call, no credits.
+ */
+async function refreshSources(db: D1Database, settings: Settings, cached: Brief): Promise<Brief> {
+  try {
+    const { results, people } = await fetchAllSources(db, settings);
+    const inbox = results.flatMap((r) => r.items);
+    // A total fetch wipe-out (every configured source erroring) should not
+    // replace a good cached inbox with nothing — keep the cache untouched.
+    const anyOk = results.some((r) => r.configured && r.ok);
+    if (!anyOk && cached.inbox.length > 0) return cached;
+    try { await persistPass(db, results, people); } catch { /* non-fatal */ }
+    try { await deriveLoops(db, results); } catch { /* non-fatal */ }
+    const merged: Brief = {
+      ...cached,
+      refreshed_at: Date.now(),
+      sources: sourceMeta(results),
+      inbox,
+      needs_attention: inbox.filter((i) => i.needsAttention).length,
+    };
+    await writeCache(db, merged);
+    return { ...merged, cached: true };
+  } catch {
+    return cached; // refresh is best-effort — a cached brief always wins over an error
+  }
+}
+
 export async function runBrief(env: Env, opts: { force?: boolean } = {}): Promise<Brief> {
   const db = env.DB;
   const settings = await loadSettings(db, env);
   const ttlMin = Math.max(1, Number(settings.BRIEF_TTL_MINUTES ?? 30));
+  const freshMin = Math.max(1, Number(settings.BRIEF_FRESHNESS_MINUTES ?? 3));
 
   if (!opts.force) {
     const cached = await readCache(db, ttlMin * 60_000);
-    if (cached) return cached;
+    if (cached) {
+      const lastPull = cached.refreshed_at ?? cached.generated_at;
+      if (Date.now() - lastPull > freshMin * 60_000) {
+        return refreshSources(db, settings, cached); // zero-LLM: inbox stays live
+      }
+      return cached;
+    }
   }
 
   // 1) Parallel, zero-credit fetch with identity resolution.

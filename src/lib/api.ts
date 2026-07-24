@@ -79,7 +79,7 @@ export async function fetchTasks(): Promise<Task[]> {
 // ---- One-shot executive brief -------------------------------------------
 
 export interface InboxItem {
-  source: 'pumble' | 'gmail' | 'zoho';
+  source: 'pumble' | 'gmail' | 'zoho' | 'gcal';
   ref: string;
   channel?: string;
   from: string;
@@ -103,6 +103,7 @@ export interface BriefSourceMeta {
 
 export interface Brief {
   generated_at: number;
+  refreshed_at?: number;
   cached: boolean;
   headline: string;
   summary: string;
