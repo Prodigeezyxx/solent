@@ -702,19 +702,55 @@ export async function persistPass(db: D1Database, results: SourceResult[], peopl
   }
 }
 
-/** Compact, token-efficient digest for the single LLM pass, attention items first. */
+/** Chronology-safe timestamp value — handles ISO (pumble/zoho/gcal) AND RFC-2822 Date headers (gmail). */
+const tsVal = (ts: string) => {
+  const v = Date.parse(ts || '');
+  return Number.isFinite(v) ? v : 0;
+};
+
+/**
+ * Compact, token-efficient digest for the single LLM pass.
+ *
+ * FAIR SELECTION (critical): items used to be taken source-by-source in
+ * order, so a chatty Pumble (75 items) could fill the entire 80-item cap and
+ * STARVE Zoho/Gmail out of the prompt completely — the model never saw new
+ * company mail at all. Now each source's items are ranked (attention first,
+ * then NEWEST first) and prompt slots are dealt round-robin across sources,
+ * so every configured source is always represented and fresh mail always
+ * reaches the model.
+ */
 export function digestForPrompt(results: SourceResult[], maxItems = 80): string {
+  const ranked = results
+    .filter((r) => r.configured)
+    .map((r) => ({
+      ...r,
+      items: [...r.items].sort(
+        (a, b) => Number(b.needsAttention) - Number(a.needsAttention) || tsVal(b.ts) - tsVal(a.ts),
+      ),
+    }));
+
+  // Round-robin deal: 1 item per source per round until the cap is reached.
+  const picked = new Map<string, SourceItem[]>(ranked.map((r) => [r.source, []]));
+  let total = 0;
+  for (let round = 0; total < maxItems; round++) {
+    let progressed = false;
+    for (const r of ranked) {
+      if (total >= maxItems) break;
+      if (round < r.items.length) {
+        picked.get(r.source)!.push(r.items[round]);
+        total++;
+        progressed = true;
+      }
+    }
+    if (!progressed) break;
+  }
+
   const lines: string[] = [];
   let i = 0;
-  const ordered = results.map((r) => ({
-    ...r,
-    items: [...r.items].sort((a, b) => Number(b.needsAttention) - Number(a.needsAttention)),
-  }));
-  for (const r of ordered) {
-    if (!r.configured) continue;
-    lines.push(`## ${r.source.toUpperCase()} — ${r.ok ? `${r.items.length} items` : `ERROR: ${r.error}`}`);
-    for (const item of r.items) {
-      if (i >= maxItems) break;
+  for (const r of ranked) {
+    const mine = picked.get(r.source)!;
+    lines.push(`## ${r.source.toUpperCase()} — ${r.ok ? `${r.items.length} items (${mine.length} shown, newest/flagged first)` : `ERROR: ${r.error}`}`);
+    for (const item of mine) {
       i++;
       const flags = [item.isDm ? 'DM' : '', item.mentionsMe ? 'MENTIONS-YOU' : '', item.needsAttention ? `ATTN(${item.attentionReason})` : '']
         .filter(Boolean)

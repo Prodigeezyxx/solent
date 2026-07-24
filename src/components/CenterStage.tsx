@@ -54,13 +54,14 @@ interface CenterStageProps {
   briefRunning: boolean;
   onRunBrief: () => void;
   onOpenSources: () => void;
+  onSetMode: (m: Mode) => void;
 }
 
 const FOCUS_SECONDS = 50 * 60;
 
 export default function CenterStage({
   mode, tasks, onToggleTask, onAddTask, messages, onSend, onOpenPalette, onToggleContext, streaming,
-  brief, briefRunning, onRunBrief, onOpenSources,
+  brief, briefRunning, onRunBrief, onOpenSources, onSetMode,
 }: CenterStageProps) {
   const [input, setInput] = useState('');
   const [focusRunning, setFocusRunning] = useState(false);
@@ -110,6 +111,7 @@ export default function CenterStage({
             onOpenSources={onOpenSources}
             onSend={onSend}
             onInspect={setContextItem}
+            onSetMode={onSetMode}
           />
         )}
 
@@ -225,6 +227,12 @@ function Composer({
   );
 }
 
+/** Chronology-safe ts — handles ISO strings AND Gmail's RFC-2822 Date headers. */
+const tsValue = (ts?: string) => {
+  const v = Date.parse(ts ?? '');
+  return Number.isFinite(v) ? v : 0;
+};
+
 const SOURCE_ICON: Record<string, React.ReactNode> = {
   pumble: <MessageSquare className="w-3 h-3" />,
   gmail: <Mail className="w-3 h-3" />,
@@ -274,19 +282,21 @@ function SourceChips({ brief, onOpenSources }: { brief: Brief | null; onOpenSour
 }
 
 function Dashboard({
-  completed, tasks, onToggleTask, onAddTask, onOpenPalette, onToggleContext, brief, briefRunning, onRunBrief, onOpenSources, onSend, onInspect,
+  completed, tasks, onToggleTask, onAddTask, onOpenPalette, onToggleContext, brief, briefRunning, onRunBrief, onOpenSources, onSend, onInspect, onSetMode,
 }: {
   completed: number; tasks: Task[]; onToggleTask: (id: number) => void; onAddTask: (title: string) => void;
   onOpenPalette: () => void; onToggleContext: () => void;
   brief: Brief | null; briefRunning: boolean; onRunBrief: () => void; onOpenSources: () => void;
-  onSend: (text: string) => void; onInspect: (item: InboxItem) => void;
+  onSend: (text: string) => void; onInspect: (item: InboxItem) => void; onSetMode: (m: Mode) => void;
 }) {
   const [showAttention, setShowAttention] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
   const [newTask, setNewTask] = useState('');
   const { hidden, hide } = useTriageOverlay(brief?.generated_at);
   const [deferredIds, setDeferredIds] = useState<Set<number>>(new Set());
-  const attentionItems = (brief?.inbox ?? []).filter((i) => i.needsAttention && !hidden.has(`${i.source}:${i.ref}`));
+  const attentionItems = (brief?.inbox ?? [])
+    .filter((i) => i.needsAttention && !hidden.has(`${i.source}:${i.ref}`))
+    .sort((a, b) => tsValue(b.ts) - tsValue(a.ts)); // newest flagged items on top
   const today = new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase();
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
@@ -304,7 +314,7 @@ function Dashboard({
           <p className="text-solent-muted text-sm mt-2">
             {brief?.headline
               ? <strong className="text-zinc-300 font-medium">{brief.headline}</strong>
-              : <>Run the one-shot pass to pull Pumble + Gmail + Zoho and triage your day.</>}
+              : <>Run the one-shot pass to pull Pumble + Gmail + Zoho + Calendar and triage your day.</>}
           </p>
         </div>
         <button
@@ -337,9 +347,15 @@ function Dashboard({
         <button onClick={() => setShowAttention((v) => !v)} className="text-left cursor-pointer" title="Click to see what needs you, with context">
           <Metric icon={<AlertTriangle className="w-4 h-4" />} color={'solent-orange' as const} value={`${needsYou}`} label="Needs you" tag={needsYou ? (showAttention ? 'hide ▴' : 'show ▾') : 'clear'} />
         </button>
-        <Metric icon={<Radio className="w-4 h-4" />} color={'solent-purple' as const} value={`${inboxCount}`} label="Items in last pass" tag={brief ? 'scanned' : '—'} />
-        <Metric icon={<Clock3 className="w-4 h-4" />} color={'solent-blue' as const} value={`${replyCount}`} label="Replies drafted" tag={replyCount ? 'awaiting you' : '—'} />
-        <Metric icon={<Gauge className="w-4 h-4" />} color={'solent-mint' as const} value={`${connected}`} sub="/3" label="Sources connected" tag={connected ? 'online' : 'connect'} />
+        <button onClick={() => onSetMode('RECEIVE')} className="text-left cursor-pointer" title="Open the unified inbox — every item from the last pass">
+          <Metric icon={<Radio className="w-4 h-4" />} color={'solent-purple' as const} value={`${inboxCount}`} label="Items in last pass" tag={brief ? 'scanned →' : '—'} />
+        </button>
+        <button onClick={() => onSetMode('RECEIVE')} className="text-left cursor-pointer" title="Open RECEIVE — drafted replies are at the top">
+          <Metric icon={<Clock3 className="w-4 h-4" />} color={'solent-blue' as const} value={`${replyCount}`} label="Replies drafted" tag={replyCount ? 'awaiting you →' : '—'} />
+        </button>
+        <button onClick={onOpenSources} className="text-left cursor-pointer" title="Open Sources — connection status & credentials">
+          <Metric icon={<Gauge className="w-4 h-4" />} color={'solent-mint' as const} value={`${connected}`} sub="/4" label="Sources connected" tag={connected ? 'online →' : 'connect'} />
+        </button>
       </div>
 
       {/* Expanded attention queue — every flagged item, clickable for full context.
@@ -647,7 +663,8 @@ function ReceiveView({
     .filter((i) => !hidden.has(`${i.source}:${i.ref}`))
     .filter((i) => (filter === 'all' ? true : filter === 'attention' ? i.needsAttention : i.source === filter))
     .slice()
-    .sort((a, b) => Number(!!b.needsAttention) - Number(!!a.needsAttention));
+    // Attention first, then NEWEST first — fresh mail can never sink below old chat.
+    .sort((a, b) => Number(!!b.needsAttention) - Number(!!a.needsAttention) || tsValue(b.ts) - tsValue(a.ts));
   const anyConfigured = brief?.sources?.some((s) => s.configured) ?? false;
   const attnCount = (brief?.inbox ?? []).filter((i) => i.needsAttention && !hidden.has(`${i.source}:${i.ref}`)).length;
 
@@ -657,7 +674,7 @@ function ReceiveView({
         <div>
           <p className="text-solent-dim font-mono text-[10px] tracking-widest mb-2 flex items-center gap-1.5"><Inbox className="w-3.5 h-3.5" /> UNIFIED INBOX</p>
           <h1 className="text-2xl font-semibold tracking-tight text-solent-text">Everything, one pass.</h1>
-          <p className="text-solent-muted text-sm mt-1">Pumble + Gmail + Zoho pulled together, triaged in a single model call.</p>
+          <p className="text-solent-muted text-sm mt-1">Pumble + Gmail + Zoho + Calendar pulled together, newest first, triaged in a single model call.</p>
         </div>
         <button
           onClick={onRunBrief}

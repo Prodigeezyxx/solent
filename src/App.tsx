@@ -231,6 +231,7 @@ function App() {
               briefRunning={briefRunning}
               onRunBrief={runBrief}
               onOpenSources={() => setSourcesOpen(true)}
+              onSetMode={(m) => { setAgentPaneOpen(false); setMode(m); }}
             />
           )}
         </main>
