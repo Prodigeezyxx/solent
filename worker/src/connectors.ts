@@ -35,12 +35,34 @@ export interface SourceItem {
   attentionReason?: string;
 }
 
+/**
+ * COVERAGE LEDGER — the root-cause fix for a whole CLASS of bugs.
+ *
+ * Twice, a selection layer silently dropped items (source-by-source digest
+ * fill starved Zoho; a Gmail recency cap dropped week-old starred intros).
+ * The pattern: "available > fetched" was INVISIBLE. This ledger makes every
+ * lossy step report what it saw vs what it kept, so a gap can never hide —
+ * it surfaces in the API, in the UI chips, and in the prompt itself.
+ */
+export interface SourceCoverage {
+  /** Items the provider says exist in the window (null = provider doesn't say). */
+  available: number | null;
+  /** Items actually pulled into this pass. */
+  fetched: number;
+  /** True when a fetch cap was hit — more items exist than were pulled. */
+  capped: boolean;
+  /** Human explanation of any gap and what guarantees still hold. */
+  note?: string;
+}
+
 export interface SourceResult {
   source: SourceName;
   ok: boolean;
   configured: boolean;
   error?: string;
   items: SourceItem[];
+  /** Fetched-vs-available transparency — silent drops are a bug class we killed. */
+  coverage?: SourceCoverage;
   /** Asks the OPERATOR made that are plausibly awaiting a reply (outbound open loops). */
   outbound?: OutboundAsk[];
 }
@@ -228,15 +250,18 @@ export async function fetchPumble(
 
     const isDmChan = (c: any) => (c.channelType ?? c.type) === 'DIRECT';
     // DMs are always high-signal: scan them plus the wanted/public channels.
-    const dms = chans.filter(isDmChan).slice(0, 6);
-    let publics = wanted.length
+    const allDms = chans.filter(isDmChan);
+    const dms = allDms.slice(0, 6);
+    const allPublics = wanted.length
       ? chans.filter((c: any) => wanted.includes(String(c.name ?? '').toLowerCase()))
       : chans.filter((c: any) => !isDmChan(c));
-    publics = publics.slice(0, maxChannels);
+    const publics = allPublics.slice(0, maxChannels);
     const scan = [...dms, ...publics];
+    const skippedChannels = (allDms.length - dms.length) + (allPublics.length - publics.length);
 
     const items: SourceItem[] = [];
     const outbound: OutboundAsk[] = [];
+    const channelHitCap = new Set<string>();
     const results = await Promise.allSettled(
       scan.map(async (c: any) => {
         const id = c.id ?? c.channelId;
@@ -244,6 +269,7 @@ export async function fetchPumble(
         const q = id ? `channelId=${encodeURIComponent(id)}` : `channel=${encodeURIComponent(c.name)}`;
         const data = await pumbleGet(key, `/listMessages?${q}&limit=${perChannel}`);
         const msgs: any[] = Array.isArray(data) ? data : data?.messages ?? [];
+        if (msgs.length >= perChannel) channelHitCap.add(String(id ?? c.name));
 
         // Two-pass: first learn who else talks in this channel (DM partner),
         // then process — so the operator's own asks get a counterparty name.
@@ -310,6 +336,17 @@ export async function fetchPumble(
     );
     const failures = results.filter((r) => r.status === 'rejected').length;
 
+    // Coverage ledger: any channel that returned a full page may hold older
+    // messages beyond the per-channel cap; skipped channels are also a gap.
+    const cappedChannels = channelHitCap.size;
+    const capped = cappedChannels > 0 || skippedChannels > 0;
+    const coverageNote = capped
+      ? [
+          cappedChannels ? `${cappedChannels}/${scan.length} channels hit the ${perChannel}-msg page cap (older messages exist)` : '',
+          skippedChannels ? `${skippedChannels} channels not scanned (channel cap)` : '',
+        ].filter(Boolean).join('; ')
+      : `all ${scan.length} scanned channels fully covered at ${perChannel} msgs/channel`;
+
     const people: PersonRecord[] = [...dir.users.entries()].map(([extId, u]) => ({
       source: 'pumble',
       extId,
@@ -325,6 +362,7 @@ export async function fetchPumble(
         configured: true,
         error: failures ? `${failures}/${scan.length} channels failed` : undefined,
         items,
+        coverage: { available: null, fetched: items.length, capped, note: coverageNote },
         outbound,
       },
       people,
@@ -420,21 +458,43 @@ export async function fetchGmail(
      *      — combined, the junk crowded the stars out of the result cap.)
      *   C) is:important — Gmail's signal, small cap, better than nothing
      */
-    const listQuery = async (q: string, n: number): Promise<string[]> => {
+    const listQuery = async (q: string, n: number): Promise<{ ids: string[]; available: number }> => {
       const r = await fetch(
         `https://gmail.googleapis.com/gmail/v1/users/me/messages?q=${encodeURIComponent(q)}&maxResults=${n}`,
         { headers: auth },
       );
       const j = await safeJson(r);
       if (!r.ok) throw new Error(`Gmail list failed: ${j.error?.message ?? r.status}`);
-      return (j.messages ?? []).map((m: any) => String(m.id));
+      const ids = (j.messages ?? []).map((m: any) => String(m.id));
+      // resultSizeEstimate = how many messages MATCH the query, not how many
+      // we pulled — the exact number that was invisible when starred intros
+      // got dropped. It now feeds the coverage ledger.
+      return { ids, available: Math.max(Number(j.resultSizeEstimate ?? ids.length), ids.length) };
     };
-    const [recentIds, starredIds, importantIds] = await Promise.all([
+    const [recent, starredQ, importantQ] = await Promise.all([
       listQuery(`in:inbox newer_than:${lookback}d -category:promotions -category:social`, max),
       listQuery(`in:inbox is:starred newer_than:${lookback}d`, 25),
       listQuery(`in:inbox is:important newer_than:${lookback}d -category:promotions -category:social -from:noreply -from:notifications`, 15),
     ]);
+    const recentIds = recent.ids;
+    const starredIds = starredQ.ids;
+    const importantIds = importantQ.ids;
     const ids = [...new Set([...starredIds, ...recentIds, ...importantIds])];
+    const starredDropped = starredQ.available - starredIds.length;
+    const gmailCapped = recent.available > recentIds.length;
+    const coverage: SourceCoverage = {
+      available: recent.available,
+      fetched: ids.length,
+      capped: gmailCapped || starredDropped > 0,
+      note: [
+        gmailCapped
+          ? `~${recent.available} inbox messages in the ${lookback}d window, newest ${recentIds.length} pulled`
+          : `full ${lookback}d window covered`,
+        `all ${starredIds.length} starred guaranteed`,
+        starredDropped > 0 ? `⚠ ${starredDropped} starred beyond the 25-star cap NOT pulled` : '',
+        `${importantIds.length} gmail-important included`,
+      ].filter(Boolean).join(' · '),
+    };
     const people = new Map<string, PersonRecord>();
 
     const items = await Promise.all(
@@ -478,7 +538,7 @@ export async function fetchGmail(
       }),
     );
     return {
-      result: { source: 'gmail', ok: true, configured: true, items: items.filter((i): i is SourceItem => !!i) },
+      result: { source: 'gmail', ok: true, configured: true, items: items.filter((i): i is SourceItem => !!i), coverage },
       people: [...people.values()],
     };
   } catch (e) {
@@ -570,7 +630,18 @@ export async function fetchZoho(
       };
       return { ...base, ...scoreAttention(base, s.OPERATOR_NAME) };
     });
-    return { result: { source: 'zoho', ok: true, configured: true, items }, people: [...people.values()] };
+    // Zoho gives no total count on this endpoint — a FULL page means more
+    // mail exists past the cap, and that must never be a silent fact.
+    const zohoCapped = items.length >= max;
+    const coverage: SourceCoverage = {
+      available: null,
+      fetched: items.length,
+      capped: zohoCapped,
+      note: zohoCapped
+        ? `page cap hit (${max}) — older company mail exists beyond this pass`
+        : `entire inbox view covered (${items.length} < ${max} cap)`,
+    };
+    return { result: { source: 'zoho', ok: true, configured: true, items, coverage }, people: [...people.values()] };
   } catch (e) {
     return { result: { source: 'zoho', ok: false, configured: true, error: (e as Error).message, items: [] }, people: [] };
   }
@@ -681,7 +752,19 @@ export async function fetchGcal(
           attentionReason: reasons.length ? reasons.slice(0, 2).join(' + ') : undefined,
         };
       });
-    return { result: { source: 'gcal', ok: true, configured: true, items }, people: [...people.values()] };
+    const gcalCapped = items.length >= max;
+    return {
+      result: {
+        source: 'gcal', ok: true, configured: true, items,
+        coverage: {
+          available: null,
+          fetched: items.length,
+          capped: gcalCapped,
+          note: gcalCapped ? `event cap hit (${max}) — later events this week not shown` : 'full week ahead covered',
+        },
+      },
+      people: [...people.values()],
+    };
   } catch (e) {
     return { result: { source: 'gcal', ok: false, configured: true, error: (e as Error).message, items: [] }, people: [] };
   }
@@ -783,7 +866,11 @@ export function digestForPrompt(results: SourceResult[], maxItems = 80): string 
   let i = 0;
   for (const r of ranked) {
     const mine = picked.get(r.source)!;
-    lines.push(`## ${r.source.toUpperCase()} — ${r.ok ? `${r.items.length} items (${mine.length} shown, newest/flagged first)` : `ERROR: ${r.error}`}`);
+    // COVERAGE IN THE PROMPT: the model must know when its view is partial,
+    // so it can say "older mail exists beyond this pass" instead of implying
+    // it saw everything — gaps are declared, never silent.
+    const cov = r.coverage?.capped ? ` | COVERAGE: ${r.coverage.note}` : '';
+    lines.push(`## ${r.source.toUpperCase()} — ${r.ok ? `${r.items.length} items (${mine.length} shown, newest/flagged first)${cov}` : `ERROR: ${r.error}`}`);
     for (const item of mine) {
       i++;
       const flags = [item.isDm ? 'DM' : '', item.mentionsMe ? 'MENTIONS-YOU' : '', item.needsAttention ? `ATTN(${item.attentionReason})` : '']

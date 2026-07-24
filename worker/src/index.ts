@@ -12,6 +12,7 @@ import { buildPane } from './panes';
 import { usageSummary } from './usage';
 import { logMemory, logDecision } from './db';
 import { deferTask, triageByRef, triageCounts, triageItem, triageOverlay, undeferTask, wakeDeferred, wakeDeferredTasks } from './triage';
+import { deleteSnapshot, getSnapshot, labelSnapshot, listSnapshots, pinSnapshot } from './snapshots';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -30,6 +31,41 @@ app.get('/api/brief', async (c) => {
   // Read path never spends credits unless the cache is cold AND sources have items.
   const brief = await runBrief(c.env, { force: false });
   return c.json(brief);
+});
+
+// ---- BRIEF SNAPSHOTS ("timeblocks") ---------------------------------------
+// Every LLM pass is auto-saved. Pulling new context never destroys the state
+// the operator was exploring — browse, pin, label, restore. Zero credits.
+app.get('/api/snapshots', async (c) => {
+  try {
+    const snapshots = await listSnapshots(c.env.DB, Number(c.req.query('limit') ?? 30));
+    return c.json({ snapshots });
+  } catch {
+    return c.json({ snapshots: [] }); // table may predate migration
+  }
+});
+
+app.get('/api/snapshots/:id', async (c) => {
+  const snap = await getSnapshot(c.env.DB, Number(c.req.param('id'))).catch(() => null);
+  if (!snap) return c.json({ error: 'snapshot not found' }, 404);
+  return c.json(snap);
+});
+
+app.post('/api/snapshots/:id/pin', async (c) => {
+  const pinned = await pinSnapshot(c.env.DB, Number(c.req.param('id')));
+  return c.json({ ok: true, pinned });
+});
+
+app.post('/api/snapshots/:id/label', async (c) => {
+  const body = await c.req.json<{ label?: string }>().catch(() => ({} as any));
+  if (typeof body.label !== 'string') return c.json({ error: 'label required' }, 400);
+  await labelSnapshot(c.env.DB, Number(c.req.param('id')), body.label);
+  return c.json({ ok: true });
+});
+
+app.delete('/api/snapshots/:id', async (c) => {
+  await deleteSnapshot(c.env.DB, Number(c.req.param('id')));
+  return c.json({ ok: true });
 });
 
 // ---- ATTENTION QUEUE ------------------------------------------------------

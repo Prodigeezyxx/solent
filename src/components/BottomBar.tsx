@@ -23,7 +23,7 @@ export default function BottomBar({ onOpenCmd, prioritiesDone, prioritiesTotal, 
   }, [refreshKey]);
 
   return (
-    <footer className="h-10 shrink-0 border-t border-solent-border flex items-center justify-between px-4 bg-solent-bg text-xs font-mono select-none z-30">
+    <footer className="shrink-0 min-h-10 border-t border-solent-border flex items-center justify-between px-4 pb-[env(safe-area-inset-bottom)] bg-solent-bg text-xs font-mono select-none z-30">
       <div className="flex items-center gap-4 text-solent-dim">
         <button
           onClick={onOpenCmd}
@@ -35,14 +35,14 @@ export default function BottomBar({ onOpenCmd, prioritiesDone, prioritiesTotal, 
 
         <div className="h-3 w-px bg-solent-border" />
 
-        <div className="flex items-center gap-2 hidden md:flex">
+        <div className="items-center gap-2 hidden md:flex">
           <CheckCircle2 className="w-3 h-3 text-solent-mint" />
           <span>{prioritiesDone}/{prioritiesTotal} Daily Priorities</span>
         </div>
       </div>
 
       <div className="flex items-center gap-4 text-solent-dim">
-        <div className="flex items-center gap-1 hidden sm:flex">
+        <div className="items-center gap-1 hidden sm:flex">
           <Network className="w-3 h-3 text-solent-mint" />
           <span>Graph Sync: ON</span>
         </div>

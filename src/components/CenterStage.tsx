@@ -1,19 +1,21 @@
 import { useState, useRef, useEffect, type FormEvent } from 'react';
 import { motion } from 'motion/react';
 import {
-  Mic, Terminal, ChevronRight, Hash, Send, Target, Clock3, Radio, Gauge,
-  Check, CheckCircle2, Circle, Activity, TrendingUp, CalendarDays, Plus, ArrowRight,
-  Sparkles, Inbox, Users, Loader2, Plug, RefreshCw, Mail, MessageSquare, PenLine, AlertTriangle, AtSign,
+  Mic, MicOff, Terminal, ChevronRight, Hash, Send, Target, Clock3, Radio, Gauge,
+  Check, CheckCircle2, Circle, Activity, TrendingUp, CalendarDays, Plus, ArrowRight, History,
+  Sparkles, Inbox, Users, Loader2, Plug, RefreshCw, Mail, MessageSquare, PenLine, AlertTriangle, AtSign, X,
 } from 'lucide-react';
 import type { Mode, Task, Message } from '../types';
 import {
   fetchTriageOverlay, deferTaskRemote, fetchDeferredItems, triageItemRemote,
-  type Brief, type InboxItem, type DeferChoice, type DeferredItem,
+  type Brief, type InboxItem, type DeferChoice, type DeferredItem, type SnapshotMeta,
 } from '../lib/api';
+import { useVoiceInput } from '../hooks/useVoiceInput';
 import KnowledgeGraph from './KnowledgeGraph';
 import OpenLoops from './OpenLoops';
 import ItemContextDrawer from './ItemContextDrawer';
 import TriageActions from './TriageActions';
+import Timeblocks from './Timeblocks';
 
 /**
  * Universal triage overlay — rows from the cached brief that were marked
@@ -55,6 +57,11 @@ interface CenterStageProps {
   onRunBrief: () => void;
   onOpenSources: () => void;
   onSetMode: (m: Mode) => void;
+  /** Non-null when the operator is viewing a restored timeblock (saved state). */
+  snapshotMeta: SnapshotMeta | null;
+  onRestoreSnapshot: (brief: Brief, meta: SnapshotMeta) => void;
+  onExitSnapshot: () => void;
+  onToast: (msg: string) => void;
 }
 
 const FOCUS_SECONDS = 50 * 60;
@@ -62,6 +69,7 @@ const FOCUS_SECONDS = 50 * 60;
 export default function CenterStage({
   mode, tasks, onToggleTask, onAddTask, messages, onSend, onOpenPalette, onToggleContext, streaming,
   brief, briefRunning, onRunBrief, onOpenSources, onSetMode,
+  snapshotMeta, onRestoreSnapshot, onExitSnapshot, onToast,
 }: CenterStageProps) {
   const [input, setInput] = useState('');
   const [focusRunning, setFocusRunning] = useState(false);
@@ -97,6 +105,23 @@ export default function CenterStage({
       <div className="absolute inset-0 bg-grid pointer-events-none opacity-100" />
 
       <div className="relative flex-1 overflow-y-auto">
+        {/* TIMEBLOCK BANNER — you're viewing a saved state; the live brief keeps
+            polling underneath and one tap returns you to it. */}
+        {snapshotMeta && (
+          <div className="sticky top-0 z-30 flex items-center gap-2 px-4 py-2 bg-solent-blue/10 border-b border-solent-blue/30 backdrop-blur-md">
+            <History className="w-3.5 h-3.5 text-solent-blue shrink-0" />
+            <span className="text-[11px] text-zinc-200 min-w-0 truncate">
+              Viewing saved state · <strong>{snapshotMeta.label || snapshotMeta.headline || 'untitled'}</strong>
+              <span className="text-solent-dim font-mono text-[10px]"> · {new Date(snapshotMeta.generated_at).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+            </span>
+            <button
+              onClick={onExitSnapshot}
+              className="ml-auto shrink-0 flex items-center gap-1 min-h-[32px] px-2.5 py-1 rounded border border-solent-blue/40 text-[10px] font-mono text-solent-blue hover:bg-solent-blue/10 transition-colors"
+            >
+              <X className="w-3 h-3" /> back to live
+            </button>
+          </div>
+        )}
         {mode === 'COMMAND' && (
           <Dashboard
             completed={completed}
@@ -112,6 +137,9 @@ export default function CenterStage({
             onSend={onSend}
             onInspect={setContextItem}
             onSetMode={onSetMode}
+            snapshotMeta={snapshotMeta}
+            onRestoreSnapshot={onRestoreSnapshot}
+            onToast={onToast}
           />
         )}
 
@@ -171,50 +199,70 @@ export default function CenterStage({
         onOpenPalette={onOpenPalette}
         chatMode={showChat}
         streaming={streaming}
+        onToast={onToast}
       />
     </div>
   );
 }
 
 function Composer({
-  value, onChange, onSubmit, onOpenPalette, chatMode, streaming,
+  value, onChange, onSubmit, onOpenPalette, chatMode, streaming, onToast,
 }: {
   value: string; onChange: (v: string) => void; onSubmit: (e: FormEvent) => void;
-  onOpenPalette: () => void; chatMode: boolean; streaming?: boolean;
+  onOpenPalette: () => void; chatMode: boolean; streaming?: boolean; onToast: (msg: string) => void;
 }) {
+  // VOICE INPUT (skeleton) — Web Speech API. Tap the mic, speak, transcript
+  // streams into the command bar; unsupported browsers get a graceful notice.
+  const { supported, listening, toggle } = useVoiceInput({
+    onTranscript: (text) => onChange(text),
+    onError: (msg) => onToast(msg),
+  });
   return (
-    <div className="relative z-10 p-4 md:p-8 bg-gradient-to-t from-solent-bg via-solent-bg to-transparent">
+    <div className="relative z-10 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] md:p-8 bg-gradient-to-t from-solent-bg via-solent-bg to-transparent">
       <div className="max-w-3xl mx-auto">
         <form
           onSubmit={onSubmit}
-          className="relative bg-solent-surface/80 border border-solent-border rounded-lg shadow-2xl backdrop-blur-xl group focus-within:border-solent-mint/50 transition-colors"
+          className={`relative bg-solent-surface/80 border rounded-lg shadow-2xl backdrop-blur-xl group focus-within:border-solent-mint/50 transition-colors ${listening ? 'border-solent-red/60' : 'border-solent-border'}`}
         >
-          <div className="flex items-center px-4 py-3">
+          <div className="flex items-center px-3 md:px-4 py-3">
             <ChevronRight className="w-5 h-5 text-solent-mint mr-2 shrink-0" />
             <input
               type="text"
               value={value}
               onChange={(e) => onChange(e.target.value)}
-              placeholder={chatMode ? 'Command CONDUCTOR, or press Space to dictate…' : 'Capture a thought or ask CONDUCTOR…'}
-              className="flex-1 bg-transparent border-none outline-none text-zinc-100 placeholder:text-solent-dim font-sans text-sm md:text-base"
+              placeholder={listening ? 'Listening… speak now' : chatMode ? 'Command CONDUCTOR, or tap the mic to dictate…' : 'Capture a thought or ask CONDUCTOR…'}
+              className="flex-1 min-w-0 bg-transparent border-none outline-none text-zinc-100 placeholder:text-solent-dim font-sans text-sm md:text-base"
             />
-            <div className="flex items-center gap-2 shrink-0">
-              <button type="button" className="p-2 text-solent-dim hover:text-solent-mint transition-colors rounded-md hover:bg-solent-border/50" aria-label="Voice">
-                <Mic className="w-4 h-4" />
+            <div className="flex items-center gap-1 md:gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={toggle}
+                aria-label={listening ? 'Stop dictation' : 'Start voice input'}
+                aria-pressed={listening}
+                title={supported ? (listening ? 'Stop dictation' : 'Dictate with your voice') : 'Voice input not supported in this browser yet'}
+                className={`min-w-[40px] min-h-[40px] grid place-items-center transition-colors rounded-md ${
+                  listening
+                    ? 'text-solent-red bg-solent-red/10 animate-pulse'
+                    : supported
+                      ? 'text-solent-dim hover:text-solent-mint hover:bg-solent-border/50'
+                      : 'text-solent-faint'
+                }`}
+              >
+                {supported ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
               </button>
-              <button type="button" onClick={onOpenPalette} className="p-2 text-solent-dim hover:text-solent-text transition-colors rounded-md hover:bg-solent-border/50" aria-label="Commands">
+              <button type="button" onClick={onOpenPalette} className="min-w-[40px] min-h-[40px] grid place-items-center text-solent-dim hover:text-solent-text transition-colors rounded-md hover:bg-solent-border/50" aria-label="Commands">
                 <Hash className="w-4 h-4" />
               </button>
-              <button type="submit" disabled={!value.trim()} className="p-2 text-solent-mint disabled:text-solent-dim disabled:opacity-50 transition-colors rounded-md hover:bg-solent-mint/10" aria-label="Send">
+              <button type="submit" disabled={!value.trim()} className="min-w-[40px] min-h-[40px] grid place-items-center text-solent-mint disabled:text-solent-dim disabled:opacity-50 transition-colors rounded-md hover:bg-solent-mint/10" aria-label="Send">
                 <Send className="w-4 h-4" />
               </button>
             </div>
           </div>
           <div className="px-4 py-2 border-t border-solent-border/50 flex items-center justify-between text-[10px] font-mono text-solent-dim bg-black/20 rounded-b-lg">
             <div className="flex items-center gap-4">
-              <span><kbd className="bg-solent-border px-1 rounded">⌘K</kbd> Palette</span>
-              <span><kbd className="bg-solent-border px-1 rounded">Space</kbd> Voice</span>
-              <span><kbd className="bg-solent-border px-1 rounded">/</kbd> Commands</span>
+              <span className="hidden sm:inline"><kbd className="bg-solent-border px-1 rounded">⌘K</kbd> Palette</span>
+              <span className={listening ? 'text-solent-red' : ''}>{listening ? '● recording' : supported ? '🎙 Mic ready' : 'voice n/a'}</span>
+              <span className="hidden sm:inline"><kbd className="bg-solent-border px-1 rounded">/</kbd> Commands</span>
             </div>
             <div className="flex items-center gap-2 text-solent-mint/70">
               <Terminal className="w-3 h-3" />
@@ -256,25 +304,38 @@ function SourceChips({ brief, onOpenSources }: { brief: Brief | null; onOpenSour
   ];
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
-      {sources.map((s) => (
-        <button
-          key={s.source}
-          onClick={onOpenSources}
-          title={s.error ?? (s.ok ? `${s.count} items` : s.configured ? 'configured, no data yet' : 'not connected')}
-          className={`flex items-center gap-1 text-[9px] font-mono uppercase tracking-wider rounded-full border px-2 py-0.5 transition-colors ${
-            s.ok
-              ? 'border-solent-mint/40 text-solent-mint'
-              : s.configured
-                ? 'border-solent-orange/40 text-solent-orange'
-                : 'border-solent-border text-solent-dim hover:text-solent-text'
-          }`}
-        >
-          <i className={`w-1.5 h-1.5 rounded-full ${s.ok ? 'bg-solent-mint' : s.configured ? 'bg-solent-orange' : 'bg-solent-border'}`} />
-          {s.source}
-          {s.ok && <span className="text-solent-dim">·{s.count}</span>}
-        </button>
-      ))}
-      <button onClick={onOpenSources} className="flex items-center gap-1 text-[9px] font-mono uppercase tracking-wider rounded-full border border-solent-border px-2 py-0.5 text-solent-dim hover:text-solent-mint transition-colors">
+      {sources.map((s) => {
+        // COVERAGE LEDGER surfaced: a capped source shows its gap right in the
+        // chip's tooltip — "available > fetched" can never be a silent fact.
+        const cov = s.coverage;
+        const covLine = cov ? `\nCoverage: ${cov.note ?? `${cov.fetched} fetched${cov.available != null ? ` of ~${cov.available}` : ''}`}` : '';
+        const title = s.error ?? (s.ok ? `${s.count} items${covLine}` : s.configured ? 'configured, no data yet' : 'not connected');
+        return (
+          <button
+            key={s.source}
+            onClick={onOpenSources}
+            title={title}
+            className={`flex items-center gap-1 text-[9px] font-mono uppercase tracking-wider rounded-full border px-2 py-1 min-h-[24px] transition-colors ${
+              s.ok
+                ? 'border-solent-mint/40 text-solent-mint'
+                : s.configured
+                  ? 'border-solent-orange/40 text-solent-orange'
+                  : 'border-solent-border text-solent-dim hover:text-solent-text'
+            }`}
+          >
+            <i className={`w-1.5 h-1.5 rounded-full ${s.ok ? 'bg-solent-mint' : s.configured ? 'bg-solent-orange' : 'bg-solent-border'}`} />
+            {s.source}
+            {s.ok && (
+              <span className="text-solent-dim">
+                ·{s.count}
+                {cov?.available != null && cov.available > cov.fetched ? <span className="text-solent-orange">/~{cov.available}</span> : null}
+              </span>
+            )}
+            {s.ok && cov?.capped && cov.available == null ? <span className="text-solent-orange" title={cov.note}>▸</span> : null}
+          </button>
+        );
+      })}
+      <button onClick={onOpenSources} className="flex items-center gap-1 text-[9px] font-mono uppercase tracking-wider rounded-full border border-solent-border px-2 py-1 min-h-[24px] text-solent-dim hover:text-solent-mint transition-colors">
         <Plug className="w-2.5 h-2.5" /> sources
       </button>
     </div>
@@ -283,11 +344,13 @@ function SourceChips({ brief, onOpenSources }: { brief: Brief | null; onOpenSour
 
 function Dashboard({
   completed, tasks, onToggleTask, onAddTask, onOpenPalette, onToggleContext, brief, briefRunning, onRunBrief, onOpenSources, onSend, onInspect, onSetMode,
+  snapshotMeta, onRestoreSnapshot, onToast,
 }: {
   completed: number; tasks: Task[]; onToggleTask: (id: number) => void; onAddTask: (title: string) => void;
   onOpenPalette: () => void; onToggleContext: () => void;
   brief: Brief | null; briefRunning: boolean; onRunBrief: () => void; onOpenSources: () => void;
   onSend: (text: string) => void; onInspect: (item: InboxItem) => void; onSetMode: (m: Mode) => void;
+  snapshotMeta: SnapshotMeta | null; onRestoreSnapshot: (brief: Brief, meta: SnapshotMeta) => void; onToast: (msg: string) => void;
 }) {
   const [showAttention, setShowAttention] = useState(false);
   const [addingTask, setAddingTask] = useState(false);
@@ -390,6 +453,15 @@ function Dashboard({
           ))}
         </section>
       )}
+
+      {/* Timeblocks — every brief state is auto-saved; restore previous
+          executive summaries while the live one keeps refreshing underneath */}
+      <Timeblocks
+        refreshKey={brief?.generated_at ?? 0}
+        currentGeneratedAt={snapshotMeta?.generated_at ?? undefined}
+        onRestore={onRestoreSnapshot}
+        onToast={onToast}
+      />
 
       {/* Deferred shelf — everything snoozed, with when it comes back */}
       <DeferredShelf refreshKey={brief?.generated_at ?? 0} />

@@ -1,6 +1,7 @@
 import type { D1Database } from '@cloudflare/workers-types';
 import type { Env } from './types';
-import { digestForPrompt, fetchAllSources, persistPass, type SourceItem, type SourceResult } from './connectors';
+import { digestForPrompt, fetchAllSources, persistPass, type SourceCoverage, type SourceItem, type SourceResult } from './connectors';
+import { saveSnapshot } from './snapshots';
 import { loadSettings, type Settings } from './settings';
 import { createTask, logAgentRun, logMemory } from './db';
 import { deriveLoops, loopsForPrompt } from './loops';
@@ -53,7 +54,15 @@ export interface Brief {
   priorities: BriefPriority[];
   signals: BriefSignal[];
   replies: BriefReply[];
-  sources: { source: string; configured: boolean; ok: boolean; count: number; error?: string }[];
+  sources: {
+    source: string;
+    configured: boolean;
+    ok: boolean;
+    count: number;
+    error?: string;
+    /** COVERAGE LEDGER — fetched vs available, so nothing is dropped silently. */
+    coverage?: SourceCoverage;
+  }[];
   inbox: SourceItem[];
   needs_attention: number;
   model?: string;
@@ -69,6 +78,7 @@ function sourceMeta(results: SourceResult[]) {
     ok: r.ok,
     count: r.items.length,
     error: r.error,
+    coverage: r.coverage,
   }));
 }
 
@@ -348,6 +358,9 @@ export async function runBrief(env: Env, opts: { force?: boolean } = {}): Promis
 
     await persistBrief(db, brief);
     await writeCache(db, brief);
+    // TIMEBLOCK: auto-save this state so pulling new context never destroys
+    // the summary the operator may still be exploring. Non-fatal by design.
+    try { await saveSnapshot(db, brief); } catch { /* table may predate migration */ }
     return brief;
   } catch (e) {
     const brief: Brief = {

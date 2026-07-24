@@ -2,8 +2,15 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Mobile-first groundwork: viewport-fit=cover unlocks safe-area insets
+         on notched phones; maximum-scale left free so pinch-zoom stays
+         accessible. Apple meta enables standalone "add to home screen". -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#080a09" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="SOLENT" />
     <meta name="description" content="SOLENT — an AI-native personal command centre for decisions, focus, memory and execution." />
     <title>SOLENT — Command Centre</title>
   </head>

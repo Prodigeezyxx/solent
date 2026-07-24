@@ -133,7 +133,17 @@ cd worker && npx wrangler d1 execute solent-db --remote --file=../solent_db_expo
 
 ## Current state & next steps (session log 2026-07-24)
 
-**Done this session:** universal triage system-wide · 14-day Gmail lookback · unshackled brief (10 priorities / 5 replies / 6 signals) · responsive graph canvas · portable DB export/import (`npm run db:export` / `db:import`) · deployed to managed Cloudflare with full data migration · **zero-LLM inbox freshness fix** (root cause of the “missing Zoho email”: 30-min brief cache + mount-only frontend fetch — fetch code was always correct) · **Google Calendar source** with full context · full production pass over every endpoint (all green).
+**Done this session:** universal triage system-wide · 14-day Gmail lookback · unshackled brief (10 priorities / 5 replies / 6 signals) · responsive graph canvas · portable DB export/import (`npm run db:export` / `db:import`) · deployed to managed Cloudflare with full data migration · **zero-LLM inbox freshness fix** (root cause of the “missing Zoho email”: 30-min brief cache + mount-only frontend fetch — fetch code was always correct) · **Google Calendar source** with full context · full production pass over every endpoint (all green) · **digest starvation fix** (round-robin source selection — a chatty Pumble can never starve mail out of the LLM prompt again) · **Gmail fetch-cap fix** (triple-query: recency + guaranteed seats for `is:starred` + `is:important`).
+
+**Root-cause class fix — the coverage ledger:** both missed-email incidents were the same bug class: *a selection layer silently dropping items*. Every source fetch now reports **fetched vs available** (`SourceResult.coverage` — Gmail uses `resultSizeEstimate`, Pumble tracks page-cap hits per channel + skipped channels, Zoho/GCal detect full pages). Coverage flows through `Brief.sources` into the UI chips (gap shown as `70/~201` with the note in the tooltip) **and into the LLM digest itself** (`COVERAGE:` header per source), so the model says "older mail exists beyond this pass" instead of implying it saw everything. A silent drop is now structurally impossible — any gap is declared at every layer.
+
+**Timeblocks — saved brief states (migration `0007`):** every LLM pass auto-saves the full brief to `brief_snapshots` (newest 40 unpinned kept; pinned kept forever). Pulling new context never destroys the summary you were exploring: the **Timeblocks** shelf on the dashboard lists previous states — restore (view an old state while the live brief keeps polling underneath, with a "back to live" banner), pin, label, delete. Endpoints: `GET /api/snapshots`, `GET /api/snapshots/:id`, `POST /api/snapshots/:id/pin|label`, `DELETE /api/snapshots/:id`.
+
+**Voice input skeleton:** the composer mic is now live — Web Speech API dictation via `src/hooks/useVoiceInput.ts` (interim transcript streams into the command bar, recording affordance, graceful fallback where unsupported). Roadmap for push-to-talk / voice commands is in `docs/UX_OVERHAUL.md`.
+
+**Mobile groundwork:** `viewport-fit=cover` + safe-area insets (Topbar/BottomBar/Composer), a horizontally-scrollable **mobile mode strip** (phones could previously never leave COMMAND mode), 40px+ touch targets on composer/triage/timeblock controls, add-to-home-screen meta.
+
+**UX/UI overhaul prep:** `docs/UX_OVERHAUL.md` — design-token + component inventory, IA critique, mobile/voice roadmaps, and a 5-phase overhaul plan (each phase ships independently to the daily driver).
 
 **Waiting on the operator:**
 - Re-mint the Google refresh token with `gmail.readonly` **+** `calendar.readonly` (same client id/secret) and paste it in Sources → Calendar goes live instantly, no redeploy

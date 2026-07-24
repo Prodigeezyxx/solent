@@ -93,12 +93,21 @@ export interface InboxItem {
   attentionReason?: string;
 }
 
+/** COVERAGE LEDGER — fetched vs available per source, so gaps are never silent. */
+export interface SourceCoverage {
+  available: number | null;
+  fetched: number;
+  capped: boolean;
+  note?: string;
+}
+
 export interface BriefSourceMeta {
   source: string;
   configured: boolean;
   ok: boolean;
   count: number;
   error?: string;
+  coverage?: SourceCoverage;
 }
 
 export interface Brief {
@@ -129,6 +138,59 @@ export async function runBriefNow(): Promise<Brief> {
   const res = await fetch('/api/brief?force=1', { method: 'POST' });
   if (!res.ok) throw new Error(`brief failed (${res.status})`);
   return (await res.json()) as Brief;
+}
+
+// ---- Brief snapshots ("timeblocks") ----------------------------------------
+// Every LLM pass is auto-saved server-side. Pulling new context never destroys
+// the summary you were exploring — browse, pin, label, restore. Zero credits.
+
+export interface SnapshotMeta {
+  id: number;
+  generated_at: number;
+  headline: string;
+  summary: string;
+  model: string | null;
+  priorities_count: number;
+  replies_count: number;
+  needs_attention: number;
+  inbox_count: number;
+  pinned: number;
+  label: string | null;
+  created_at: number;
+}
+
+export async function fetchSnapshots(limit = 30): Promise<SnapshotMeta[]> {
+  const res = await fetch(`/api/snapshots?limit=${limit}`);
+  if (!res.ok) throw new Error('snapshots failed');
+  const json = (await res.json()) as { snapshots: SnapshotMeta[] };
+  return json.snapshots ?? [];
+}
+
+/** Full restorable brief state for one timeblock. */
+export async function fetchSnapshot(id: number): Promise<{ meta: SnapshotMeta; brief: Brief }> {
+  const res = await fetch(`/api/snapshots/${id}`);
+  if (!res.ok) throw new Error(`snapshot failed (${res.status})`);
+  return (await res.json()) as { meta: SnapshotMeta; brief: Brief };
+}
+
+export async function pinSnapshotRemote(id: number): Promise<boolean> {
+  const res = await fetch(`/api/snapshots/${id}/pin`, { method: 'POST' });
+  if (!res.ok) throw new Error('pin failed');
+  const json = (await res.json()) as { pinned: boolean };
+  return json.pinned;
+}
+
+export async function labelSnapshotRemote(id: number, label: string): Promise<void> {
+  const res = await fetch(`/api/snapshots/${id}/label`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ label }),
+  });
+  if (!res.ok) throw new Error('label failed');
+}
+
+export async function deleteSnapshotRemote(id: number): Promise<void> {
+  await fetch(`/api/snapshots/${id}`, { method: 'DELETE' });
 }
 
 // ---- Knowledge graph -------------------------------------------------------

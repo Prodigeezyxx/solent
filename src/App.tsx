@@ -5,7 +5,7 @@ import type { AgentRole, Message, Mode, Task } from './types';
 import { AGENTS, TASKS } from './data/agents';
 import {
   createTaskRemote, fetchBrief, fetchTasks, runBriefNow, streamChat, toggleTaskRemote,
-  type Brief, type ToolEvent,
+  type Brief, type SnapshotMeta, type ToolEvent,
 } from './lib/api';
 import Topbar from './components/Topbar';
 import LeftRail from './components/LeftRail';
@@ -30,6 +30,10 @@ function App() {
   const [tasks, setTasks] = useState<Task[]>(TASKS);
   const [brief, setBrief] = useState<Brief | null>(null);
   const [briefRunning, setBriefRunning] = useState(false);
+  // TIMEBLOCK VIEW — a restored previous brief state. While set, it is what
+  // the operator sees; the LIVE brief keeps polling underneath untouched, so
+  // exploring an old state never fights with (or is destroyed by) new pulls.
+  const [snapshotView, setSnapshotView] = useState<{ brief: Brief; meta: SnapshotMeta } | null>(null);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState<AgentRole>('ATLAS');
@@ -103,6 +107,7 @@ function App() {
 
   // The ONE-SHOT pass: pull Pumble + Gmail + Zoho, one model call, done.
   const runBrief = useCallback(async () => {
+    setSnapshotView(null); // a deliberate new pull returns you to the live state
     setBriefRunning(true);
     setToast('CONDUCTOR running the one-shot pass…');
     try {
@@ -227,16 +232,20 @@ function App() {
               onOpenPalette={() => setPaletteOpen(true)}
               onToggleContext={() => setContextOpen((o) => !o)}
               streaming={streaming}
-              brief={brief}
+              brief={snapshotView?.brief ?? brief}
               briefRunning={briefRunning}
               onRunBrief={runBrief}
               onOpenSources={() => setSourcesOpen(true)}
               onSetMode={(m) => { setAgentPaneOpen(false); setMode(m); }}
+              snapshotMeta={snapshotView?.meta ?? null}
+              onRestoreSnapshot={(b, meta) => setSnapshotView({ brief: b, meta })}
+              onExitSnapshot={() => setSnapshotView(null)}
+              onToast={setToast}
             />
           )}
         </main>
 
-        <RightRail agent={selectedAgentData} open={contextOpen} onClose={() => setContextOpen(false)} brief={brief} />
+        <RightRail agent={selectedAgentData} open={contextOpen} onClose={() => setContextOpen(false)} brief={snapshotView?.brief ?? brief} />
       </div>
 
       <BottomBar
