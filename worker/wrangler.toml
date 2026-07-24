@@ -9,10 +9,11 @@ directory = "../dist"
 binding = "ASSETS"
 not_found_handling = "single-page-application"
 
-# Morning auto-brief: sources are pulled and triaged before you open the app.
-# 06:30 UTC weekdays — one model call per day baseline.
-[triggers]
-crons = ["30 6 * * 1-5"]
+# Morning auto-brief cron is disabled for the managed hosted deploy —
+# Workers-for-Platforms user workers don't support cron triggers.
+# (Self-hosting on your own CF account? Re-enable:)
+# [triggers]
+# crons = ["30 6 * * 1-5"]
 
 # D1 database binding (created via: wrangler d1 create solent-db)
 [[d1_databases]]
