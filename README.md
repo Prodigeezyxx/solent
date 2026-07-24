@@ -19,6 +19,10 @@ NEXUS is your **second executive-function layer**: it connects your real work so
 - **Kimi / model-agnostic** — `response_format` fallback retry + tolerant balanced-brace JSON extraction; set `OPENROUTER_MODEL` to `moonshotai/kimi-k2` (or any slug) and it just works
 - **Operator personalization** — set your name + context in Sources; the brief and CONDUCTOR address you and weigh what matters to a founder
 - **Morning auto-brief** — Cron Trigger (weekdays 06:30 UTC) runs the pass before you open the app
+- **Open loops** — commitments in flight, derived deterministically from every pass (zero LLM): inbound = what you OWE people, outbound = what you're WAITING on; aged, oldest-first, with reply/nudge drafting, resolve/dismiss, auto-close when the counterparty replies, and bot filtering. Loops feed both the brief and CONDUCTOR prompts (with ids), so the model nags about anything > 2 days old and can close loops via the `resolve_loop` tool
+- **Item context drawer** — click any inbox or attention item: full message, who the person is (title/email/VIP), your recent history with them, open loops with them, why it was flagged, draft-reply and mark-handled actions. All zero-credit D1 reads
+- **Context library** — paste docs/memos/notes in Sources (or just paste into chat — CONDUCTOR saves them via `save_context_doc`); injected compactly as ground truth into every brief and chat, no extra model calls
+- **Model picker** — curated frontier presets (Kimi K3, Kimi K2.6, Claude 3.5 Sonnet, DeepSeek V3/R1, Gemini 2.5 Flash, Qwen3 235B) plus any custom OpenRouter slug, and a reasoning-effort selector (off/low/medium/high) that degrades gracefully on models without reasoning support
 - **Pumble connector** — official API-Keys addon; scans public channels **and DMs** (optionally restricted via `PUMBLE_CHANNELS`), skips your own messages
 - **Gmail connector** — OAuth2 refresh-token flow; inbox metadata + snippets, promotions/social filtered out
 - **Zoho Mail connector** — OAuth2 refresh-token flow; auto-discovers account id, multi-DC support
@@ -41,6 +45,12 @@ NEXUS is your **second executive-function layer**: it connects your real work so
 | `GET /api/graph` | Knowledge graph nodes + edges (zero-credit) |
 | `GET /api/attention` | Unseen items flagged by the attention engine (zero-credit) |
 | `POST /api/attention/:id/seen` | Dismiss an attention item |
+| `GET /api/loops` | Open loops — commitments in flight (zero-credit) |
+| `POST /api/loops/:id/resolve\|dismiss` | Close a loop |
+| `GET /api/items/:id/context` | Full context for one item: person, history, loops, flag reason |
+| `GET /api/items/resolve?source&ref` | Map a brief inbox ref to its durable row id |
+| `GET/POST /api/docs`, `DELETE /api/docs/:id` | Context library CRUD |
+| `GET /api/models` | Curated model presets for the picker |
 | `POST /api/brief?force=1` | Run the one-shot pass now (one model call) |
 | `GET/POST /api/settings` | Connector credentials (secrets write-only, never echoed) |
 | `GET /api/state` | Tasks + memories snapshot |

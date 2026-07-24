@@ -1,7 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { CheckCircle2, Circle, Loader2, Plug, X } from 'lucide-react';
-import { fetchSettings, saveSettingsRemote, type BriefSourceMeta, type SettingsStatus } from '../lib/api';
+import { BookOpen, Brain, CheckCircle2, Circle, Loader2, Plug, Plus, Trash2, X } from 'lucide-react';
+import {
+  deleteDocRemote, fetchDocs, fetchModels, fetchSettings, saveDocRemote, saveSettingsRemote,
+  type BriefSourceMeta, type DocMeta, type ModelPreset, type SettingsStatus,
+} from '../lib/api';
 
 interface SourcesModalProps {
   isOpen: boolean;
@@ -60,27 +63,59 @@ const GROUPS: { id: string; title: string; hint: string; fields: FieldDef[] }[] 
   {
     id: 'llm',
     title: 'Model — one call per pass',
-    hint: 'OpenRouter key. ONE model call per pass, cached. Kimi-ready — set the model to moonshotai/kimi-k2 (or any OpenRouter slug); JSON parsing tolerates models without response_format support.',
+    hint: 'OpenRouter key. ONE model call per pass, cached. Pick a preset below or type any OpenRouter slug — JSON parsing tolerates every model.',
     fields: [
       { key: 'OPENROUTER_API_KEY', label: 'OpenRouter API key', secret: true },
-      { key: 'OPENROUTER_MODEL', label: 'Model (optional)', placeholder: 'moonshotai/kimi-k2' },
       { key: 'BRIEF_TTL_MINUTES', label: 'Cache window, minutes (default 30)', placeholder: '30' },
     ],
   },
 ];
+
+const REASONING_LEVELS = ['off', 'low', 'medium', 'high'] as const;
 
 export default function SourcesModal({ isOpen, onClose, sources, onSaved }: SourcesModalProps) {
   const [status, setStatus] = useState<SettingsStatus>({});
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [note, setNote] = useState('');
+  const [models, setModels] = useState<ModelPreset[]>([]);
+  const [docs, setDocs] = useState<DocMeta[]>([]);
+  const [docTitle, setDocTitle] = useState('');
+  const [docContent, setDocContent] = useState('');
+  const [docSaving, setDocSaving] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
     setDraft({});
     setNote('');
     fetchSettings().then(setStatus).catch(() => setNote('Could not load settings — is the Worker running?'));
+    fetchModels().then(setModels).catch(() => setModels([]));
+    fetchDocs().then(setDocs).catch(() => setDocs([]));
   }, [isOpen]);
+
+  const currentModel = (draft.OPENROUTER_MODEL ?? (typeof status.OPENROUTER_MODEL === 'string' ? status.OPENROUTER_MODEL : '')) || '';
+  const currentReasoning = (draft.OPENROUTER_REASONING ?? (typeof status.OPENROUTER_REASONING === 'string' ? status.OPENROUTER_REASONING : '')) || 'off';
+
+  const addDoc = async () => {
+    if (!docTitle.trim() || !docContent.trim()) return;
+    setDocSaving(true);
+    try {
+      await saveDocRemote(docTitle.trim(), docContent);
+      setDocTitle('');
+      setDocContent('');
+      setDocs(await fetchDocs());
+      setNote('Context doc saved — it now feeds every brief and chat.');
+    } catch {
+      setNote('Doc save failed — is the Worker running?');
+    } finally {
+      setDocSaving(false);
+    }
+  };
+
+  const removeDoc = async (id: number) => {
+    setDocs((d) => d.filter((x) => x.id !== id));
+    try { await deleteDocRemote(id); } catch { setDocs(await fetchDocs()); }
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -171,6 +206,113 @@ export default function SourcesModal({ isOpen, onClose, sources, onSaved }: Sour
                   </section>
                 );
               })}
+
+              {/* ---- Model picker: frontier-level presets ---- */}
+              <section className="rounded-lg border border-nexus-border/60 overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2.5 bg-black/20 border-b border-nexus-border/50">
+                  <h3 className="flex items-center gap-1.5 text-xs font-semibold text-zinc-200"><Brain className="w-3.5 h-3.5 text-nexus-purple" /> Model picker</h3>
+                  <span className="text-[9px] font-mono text-nexus-dim">{currentModel || 'default'}</span>
+                </div>
+                <p className="px-3 pt-2 text-[10px] text-nexus-dim leading-relaxed">
+                  One model runs everything — the brief AND the CONDUCTOR orchestration. Presets are frontier-level at sane prices; reasoning effort applies to models that support it (Kimi K3, R1, Qwen3).
+                </p>
+                <div className="p-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {models.map((m) => {
+                    const active = currentModel === m.id;
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => setDraft((d) => ({ ...d, OPENROUTER_MODEL: m.id }))}
+                        className={`text-left rounded-lg border px-3 py-2.5 transition-colors ${active ? 'border-nexus-mint/50 bg-nexus-mint/[.06]' : 'border-nexus-border hover:border-nexus-border/80 bg-black/20'}`}
+                      >
+                        <span className="flex items-center gap-2">
+                          <strong className={`text-[11px] font-semibold ${active ? 'text-nexus-mint' : 'text-zinc-200'}`}>{m.name}</strong>
+                          {m.reasoning && <span className="px-1.5 py-0.5 rounded bg-nexus-purple/10 text-[8px] font-mono text-nexus-purple uppercase">reasoning</span>}
+                          <span className="ml-auto text-[8px] font-mono text-nexus-dim">{m.price}</span>
+                        </span>
+                        <span className="block text-[9px] font-mono text-nexus-dim mt-0.5">{m.vendor} · {m.tier}</span>
+                        <span className="block text-[9px] text-nexus-muted mt-1 leading-relaxed">{m.note}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="px-3 pb-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="block">
+                    <span className="block text-[10px] font-mono text-nexus-dim mb-1 uppercase tracking-wider">Custom slug (any OpenRouter model)</span>
+                    <input
+                      type="text"
+                      value={draft.OPENROUTER_MODEL ?? currentModel}
+                      onChange={(e) => setDraft((d) => ({ ...d, OPENROUTER_MODEL: e.target.value }))}
+                      placeholder="moonshotai/kimi-k3"
+                      className="w-full bg-black/30 border border-nexus-border rounded px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-nexus-mint/50 placeholder:text-nexus-dim/60"
+                    />
+                  </label>
+                  <div>
+                    <span className="block text-[10px] font-mono text-nexus-dim mb-1 uppercase tracking-wider">Reasoning effort</span>
+                    <div className="flex items-center gap-1">
+                      {REASONING_LEVELS.map((lvl) => (
+                        <button
+                          key={lvl}
+                          type="button"
+                          onClick={() => setDraft((d) => ({ ...d, OPENROUTER_REASONING: lvl }))}
+                          className={`flex-1 h-[30px] rounded border text-[10px] font-mono uppercase transition-colors ${
+                            currentReasoning === lvl ? 'border-nexus-purple/60 bg-nexus-purple/10 text-nexus-purple' : 'border-nexus-border text-nexus-dim hover:text-nexus-text'
+                          }`}
+                        >
+                          {lvl}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              {/* ---- Context library: docs the model treats as ground truth ---- */}
+              <section className="rounded-lg border border-nexus-border/60 overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2.5 bg-black/20 border-b border-nexus-border/50">
+                  <h3 className="flex items-center gap-1.5 text-xs font-semibold text-zinc-200"><BookOpen className="w-3.5 h-3.5 text-nexus-blue" /> Context library</h3>
+                  <span className="text-[9px] font-mono text-nexus-dim">{docs.length} doc{docs.length === 1 ? '' : 's'}</span>
+                </div>
+                <p className="px-3 pt-2 text-[10px] text-nexus-dim leading-relaxed">
+                  Paste strategy memos, product notes, investor context — anything the model should treat as ground truth. Injected compactly into every brief and CONDUCTOR chat (no extra model calls). You can also just paste a doc into the chat and ask CONDUCTOR to save it.
+                </p>
+                <div className="p-3 space-y-2">
+                  {docs.map((d) => (
+                    <div key={d.id} className="flex items-start gap-2 rounded border border-nexus-border/60 bg-black/20 px-2.5 py-2">
+                      <div className="min-w-0 flex-1">
+                        <strong className="block text-[11px] font-medium text-zinc-300 truncate">{d.title}</strong>
+                        <small className="block text-[9px] text-nexus-dim truncate">{d.preview}… · {Math.round(d.size / 100) / 10}k chars</small>
+                      </div>
+                      <button type="button" onClick={() => removeDoc(d.id)} className="p-1 text-nexus-dim hover:text-nexus-orange transition-colors" title="Delete doc">
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                  <input
+                    type="text"
+                    value={docTitle}
+                    onChange={(e) => setDocTitle(e.target.value)}
+                    placeholder="Doc title, e.g. 'Q3 strategy memo'"
+                    className="w-full bg-black/30 border border-nexus-border rounded px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-nexus-blue/50 placeholder:text-nexus-dim/60"
+                  />
+                  <textarea
+                    value={docContent}
+                    onChange={(e) => setDocContent(e.target.value)}
+                    placeholder="Paste the content here…"
+                    rows={4}
+                    className="w-full bg-black/30 border border-nexus-border rounded px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-nexus-blue/50 placeholder:text-nexus-dim/60 resize-y"
+                  />
+                  <button
+                    type="button"
+                    onClick={addDoc}
+                    disabled={docSaving || !docTitle.trim() || !docContent.trim()}
+                    className="flex items-center gap-1.5 px-3 h-8 rounded-md border border-nexus-blue/40 text-nexus-blue text-xs font-semibold hover:bg-nexus-blue/10 disabled:opacity-50 transition-colors"
+                  >
+                    {docSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Add to library
+                  </button>
+                </div>
+              </section>
             </div>
 
             <div className="sticky bottom-0 flex items-center justify-between gap-3 p-4 border-t border-nexus-border/60 bg-nexus-surface">

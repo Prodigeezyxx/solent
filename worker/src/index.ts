@@ -6,6 +6,8 @@ import { recentMemories } from './db';
 import { runBrief } from './brief';
 import { buildGraph } from './graph';
 import { loadSettings, saveSettings, settingsStatus } from './settings';
+import { listLoops, setLoopStatus } from './loops';
+import { listDocs, getDoc, saveDoc, deleteDoc } from './docs';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -44,6 +46,120 @@ app.post('/api/attention/:id/seen', async (c) => {
   await c.env.DB.prepare('UPDATE items SET seen = 1 WHERE id = ?').bind(id).run();
   return c.json({ ok: true });
 });
+
+// ---- ITEM CONTEXT ---------------------------------------------------------
+// Everything the system knows about ONE item: the message, the person behind
+// it, their recent history with you, and why it was flagged. Zero-credit.
+app.get('/api/items/:id/context', async (c) => {
+  const id = Number(c.req.param('id'));
+  try {
+    const item = await c.env.DB
+      .prepare('SELECT * FROM items WHERE id = ?')
+      .bind(id)
+      .first<Record<string, unknown>>();
+    if (!item) return c.json({ error: 'not found' }, 404);
+
+    const fromId = item.from_id as string | null;
+    const fromName = item.from_name as string;
+
+    const [person, history, loops] = await Promise.all([
+      fromId
+        ? c.env.DB.prepare('SELECT name, email, title, vip, last_seen FROM people WHERE source = ? AND ext_id = ?').bind(item.source, fromId).first()
+        : Promise.resolve(null),
+      c.env.DB
+        .prepare('SELECT id, channel, text, ts, is_dm, mentions_me, needs_attention, attention_reason FROM items WHERE from_name = ? AND id != ? ORDER BY created_at DESC LIMIT 8')
+        .bind(fromName, id)
+        .all()
+        .then((r) => r.results ?? []),
+      c.env.DB
+        .prepare("SELECT id, direction, ask, opened_ts, status FROM loops WHERE counterparty = ? AND status = 'open' LIMIT 5")
+        .bind(fromName)
+        .all()
+        .then((r) => r.results ?? [])
+        .catch(() => []),
+    ]);
+
+    return c.json({ item, person, history, loops });
+  } catch (e) {
+    return c.json({ error: (e as Error).message }, 500);
+  }
+});
+
+// Resolve an inbox item ref (source+ref from the brief) to its durable row id.
+app.get('/api/items/resolve', async (c) => {
+  const source = c.req.query('source');
+  const ref = c.req.query('ref');
+  if (!source || !ref) return c.json({ error: 'source and ref required' }, 400);
+  const row = await c.env.DB.prepare('SELECT id FROM items WHERE source = ? AND ref = ?').bind(source, ref).first<{ id: number }>();
+  return c.json({ id: row?.id ?? null });
+});
+
+// ---- OPEN LOOPS -----------------------------------------------------------
+// Commitments in flight: what you owe people, what you're waiting on.
+app.get('/api/loops', async (c) => {
+  try {
+    return c.json({ loops: await listLoops(c.env.DB) });
+  } catch {
+    return c.json({ loops: [] });
+  }
+});
+
+app.post('/api/loops/:id/:action', async (c) => {
+  const id = Number(c.req.param('id'));
+  const action = c.req.param('action');
+  if (action !== 'resolve' && action !== 'dismiss') return c.json({ error: 'action must be resolve|dismiss' }, 400);
+  await setLoopStatus(c.env.DB, id, action === 'resolve' ? 'resolved' : 'dismissed');
+  return c.json({ ok: true });
+});
+
+// ---- CONTEXT LIBRARY (docs) -----------------------------------------------
+// Operator-fed ground truth: pasted docs, memos, notes. Injected into prompts.
+app.get('/api/docs', async (c) => {
+  try {
+    return c.json({ docs: await listDocs(c.env.DB) });
+  } catch {
+    return c.json({ docs: [] });
+  }
+});
+
+app.get('/api/docs/:id', async (c) => {
+  const doc = await getDoc(c.env.DB, Number(c.req.param('id')));
+  if (!doc) return c.json({ error: 'not found' }, 404);
+  return c.json(doc);
+});
+
+app.post('/api/docs', async (c) => {
+  let body: { id?: number; title?: string; content?: string; kind?: string };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'invalid json' }, 400);
+  }
+  if (!body.title?.trim() || !body.content?.trim()) return c.json({ error: 'title and content required' }, 400);
+  const id = await saveDoc(c.env.DB, body.title.trim(), body.content, body.kind ?? 'doc', body.id);
+  return c.json({ id }, body.id ? 200 : 201);
+});
+
+app.delete('/api/docs/:id', async (c) => {
+  await deleteDoc(c.env.DB, Number(c.req.param('id')));
+  return c.json({ ok: true });
+});
+
+// ---- MODEL PRESETS ----------------------------------------------------------
+// Curated frontier-level options at sane prices; the UI renders these as a picker.
+app.get('/api/models', (c) =>
+  c.json({
+    models: [
+      { id: 'moonshotai/kimi-k3', name: 'Kimi K3', vendor: 'Moonshot', tier: 'frontier reasoning', price: '$3/$15 per M', note: 'SOTA open-weight 2.8T reasoning model — best orchestrator', reasoning: true },
+      { id: 'moonshotai/kimi-k2.6', name: 'Kimi K2.6', vendor: 'Moonshot', tier: 'cheap frontier', price: '~$0.6/$2.5 per M', note: 'Kimi line workhorse — near-frontier at low cost', reasoning: false },
+      { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', vendor: 'Anthropic', tier: 'frontier', price: '$3/$15 per M', note: 'Excellent judgement + strict JSON; strong tool use', reasoning: false },
+      { id: 'deepseek/deepseek-chat-v3-0324', name: 'DeepSeek V3', vendor: 'DeepSeek', tier: 'near-frontier cheap', price: '~$0.3/$1.2 per M', note: 'Frontier-class quality at commodity price', reasoning: false },
+      { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1', vendor: 'DeepSeek', tier: 'cheap reasoning', price: '~$0.5/$2 per M', note: 'Deliberate reasoning traces, very cheap', reasoning: true },
+      { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash', vendor: 'Google', tier: 'fast + cheap', price: '~$0.15/$0.6 per M', note: 'Fastest triage; fine for briefs', reasoning: false },
+      { id: 'qwen/qwen3-235b-a22b', name: 'Qwen3 235B', vendor: 'Alibaba', tier: 'open frontier', price: '~$0.2/$0.6 per M', note: 'Hybrid reasoning modes, strong multilingual', reasoning: true },
+    ],
+  }),
+);
 
 // ---- KNOWLEDGE GRAPH ----------------------------------------------------
 // Relationship tree over everything the system knows. Pure D1 reads — free.

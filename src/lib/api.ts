@@ -190,6 +190,113 @@ export async function markSeen(id: number): Promise<void> {
   await fetch(`/api/attention/${id}/seen`, { method: 'POST' });
 }
 
+// ---- Open loops -------------------------------------------------------------
+
+export interface Loop {
+  id: number;
+  direction: 'inbound' | 'outbound';
+  source: string;
+  ref: string;
+  channel: string | null;
+  counterparty: string;
+  counterparty_id: string | null;
+  ask: string;
+  opened_ts: string | null;
+  status: string;
+  created_at: number;
+}
+
+/** Zero-credit read: commitments in flight (what you owe / what you await). */
+export async function fetchLoops(): Promise<Loop[]> {
+  const res = await fetch('/api/loops');
+  if (!res.ok) throw new Error(`loops failed (${res.status})`);
+  const json = (await res.json()) as { loops: Loop[] };
+  return json.loops;
+}
+
+export async function actOnLoop(id: number, action: 'resolve' | 'dismiss'): Promise<void> {
+  await fetch(`/api/loops/${id}/${action}`, { method: 'POST' });
+}
+
+// ---- Item context -----------------------------------------------------------
+
+export interface ItemContext {
+  item: {
+    id: number; source: string; ref: string; channel: string | null; from_name: string;
+    from_id: string | null; title: string; text: string; ts: string | null;
+    is_dm: number; mentions_me: number; needs_attention: number; attention_reason: string | null; seen: number;
+  };
+  person: { name: string; email: string | null; title: string | null; vip: number; last_seen: number } | null;
+  history: { id: number; channel: string | null; text: string; ts: string | null; is_dm: number; mentions_me: number; needs_attention: number; attention_reason: string | null }[];
+  loops: { id: number; direction: string; ask: string; opened_ts: string | null; status: string }[];
+}
+
+export async function resolveItemId(source: string, ref: string): Promise<number | null> {
+  const res = await fetch(`/api/items/resolve?source=${encodeURIComponent(source)}&ref=${encodeURIComponent(ref)}`);
+  if (!res.ok) return null;
+  const json = (await res.json()) as { id: number | null };
+  return json.id;
+}
+
+export async function fetchItemContext(id: number): Promise<ItemContext> {
+  const res = await fetch(`/api/items/${id}/context`);
+  if (!res.ok) throw new Error(`context failed (${res.status})`);
+  return (await res.json()) as ItemContext;
+}
+
+// ---- Context library (docs) ---------------------------------------------------
+
+export interface DocMeta {
+  id: number;
+  title: string;
+  kind: string;
+  preview: string;
+  size: number;
+  created_at: number;
+  updated_at: number;
+}
+
+export async function fetchDocs(): Promise<DocMeta[]> {
+  const res = await fetch('/api/docs');
+  if (!res.ok) throw new Error('docs failed');
+  const json = (await res.json()) as { docs: DocMeta[] };
+  return json.docs;
+}
+
+export async function saveDocRemote(title: string, content: string, id?: number): Promise<number> {
+  const res = await fetch('/api/docs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, title, content }),
+  });
+  if (!res.ok) throw new Error('doc save failed');
+  const json = (await res.json()) as { id: number };
+  return json.id;
+}
+
+export async function deleteDocRemote(id: number): Promise<void> {
+  await fetch(`/api/docs/${id}`, { method: 'DELETE' });
+}
+
+// ---- Model presets ------------------------------------------------------------
+
+export interface ModelPreset {
+  id: string;
+  name: string;
+  vendor: string;
+  tier: string;
+  price: string;
+  note: string;
+  reasoning: boolean;
+}
+
+export async function fetchModels(): Promise<ModelPreset[]> {
+  const res = await fetch('/api/models');
+  if (!res.ok) throw new Error('models failed');
+  const json = (await res.json()) as { models: ModelPreset[] };
+  return json.models;
+}
+
 // ---- Settings / sources ---------------------------------------------------
 
 export type SettingsStatus = Record<string, string | boolean>;

@@ -39,6 +39,18 @@ export interface SourceResult {
   configured: boolean;
   error?: string;
   items: SourceItem[];
+  /** Asks the OPERATOR made that are plausibly awaiting a reply (outbound open loops). */
+  outbound?: OutboundAsk[];
+}
+
+export interface OutboundAsk {
+  source: 'pumble' | 'gmail' | 'zoho';
+  ref: string;
+  channel: string;
+  counterparty: string;
+  counterpartyId?: string;
+  ask: string;
+  ts: string;
 }
 
 export interface PersonRecord {
@@ -185,6 +197,7 @@ export async function fetchPumble(
     const scan = [...dms, ...publics];
 
     const items: SourceItem[] = [];
+    const outbound: OutboundAsk[] = [];
     const results = await Promise.allSettled(
       scan.map(async (c: any) => {
         const id = c.id ?? c.channelId;
@@ -192,32 +205,63 @@ export async function fetchPumble(
         const q = id ? `channelId=${encodeURIComponent(id)}` : `channel=${encodeURIComponent(c.name)}`;
         const data = await pumbleGet(key, `/listMessages?${q}&limit=${perChannel}`);
         const msgs: any[] = Array.isArray(data) ? data : data?.messages ?? [];
-        for (const m of msgs) {
-          const msg = m?.message ?? m;
-          const rawText = strip(String(msg.text ?? msg.blocksText ?? ''));
-          if (!rawText) continue;
-          const authorId = String(msg.author ?? msg.authorId ?? msg.userId ?? '');
-          if (authorId && authorId === dir.me.id) continue; // skip your own messages
-          const author = dir.users.get(authorId);
-          const from = author?.name ?? (authorId ? clip(authorId, 12) : 'teammate');
-          const { text, mentionsMe } = expandMentions(rawText, dir);
-          // DM channel label: the other person's name beats a raw id
-          const channelLabel = isDm ? `DM · ${from}` : `#${c.name ?? 'channel'}`;
-          const rawTs = msg.timestamp ?? msg.createdAt ?? '';
-          let ts = '';
-          if (rawTs) {
-            const d = new Date(typeof rawTs === 'number' || /^\d+$/.test(String(rawTs)) ? Number(rawTs) : String(rawTs));
-            ts = isNaN(d.getTime()) ? String(rawTs) : d.toISOString();
+
+        // Two-pass: first learn who else talks in this channel (DM partner),
+        // then process — so the operator's own asks get a counterparty name.
+        const norm = msgs
+          .map((m) => {
+            const msg = m?.message ?? m;
+            const rawText = strip(String(msg.text ?? msg.blocksText ?? ''));
+            const authorId = String(msg.author ?? msg.authorId ?? msg.userId ?? '');
+            const rawTs = msg.timestamp ?? msg.createdAt ?? '';
+            let ts = '';
+            if (rawTs) {
+              const d = new Date(typeof rawTs === 'number' || /^\d+$/.test(String(rawTs)) ? Number(rawTs) : String(rawTs));
+              ts = isNaN(d.getTime()) ? String(rawTs) : d.toISOString();
+            }
+            return { ref: String(msg.id ?? ''), rawText, authorId, ts };
+          })
+          .filter((m) => m.rawText);
+
+        const partnerId = norm.find((m) => m.authorId && m.authorId !== dir.me.id)?.authorId;
+        const partner = partnerId ? dir.users.get(partnerId)?.name ?? clip(partnerId, 12) : undefined;
+        // Whether anyone replied after a given message index (loop-closing heuristic)
+        const lastOtherTs = norm.filter((m) => m.authorId !== dir.me.id).map((m) => m.ts).sort().pop() ?? '';
+
+        for (const m of norm) {
+          const isMine = !!m.authorId && m.authorId === dir.me.id;
+          const { text, mentionsMe } = expandMentions(m.rawText, dir);
+
+          if (isMine) {
+            // OUTBOUND LOOP: you asked something and nobody has replied since.
+            const asked = ASK_RE.test(text) || text.includes('?');
+            const unanswered = !lastOtherTs || (m.ts && m.ts > lastOtherTs);
+            if (isDm && asked && unanswered && partner) {
+              outbound.push({
+                source: 'pumble',
+                ref: m.ref,
+                channel: `DM · ${partner}`,
+                counterparty: partner,
+                counterpartyId: partnerId,
+                ask: clip(text, 200),
+                ts: m.ts,
+              });
+            }
+            continue; // own messages never enter the inbox
           }
+
+          const author = dir.users.get(m.authorId);
+          const from = author?.name ?? (m.authorId ? clip(m.authorId, 12) : 'teammate');
+          const channelLabel = isDm ? `DM · ${from}` : `#${c.name ?? 'channel'}`;
           const base = {
             source: 'pumble' as const,
-            ref: String(msg.id ?? ''),
+            ref: m.ref,
             channel: channelLabel,
             from,
-            fromId: authorId || undefined,
+            fromId: m.authorId || undefined,
             title: channelLabel,
             text: clip(text, 280),
-            ts,
+            ts: m.ts,
             isDm,
             mentionsMe,
           };
@@ -242,6 +286,7 @@ export async function fetchPumble(
         configured: true,
         error: failures ? `${failures}/${scan.length} channels failed` : undefined,
         items,
+        outbound,
       },
       people,
     };

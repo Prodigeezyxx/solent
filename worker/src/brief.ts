@@ -3,6 +3,8 @@ import type { Env } from './types';
 import { digestForPrompt, fetchAllSources, persistPass, type SourceItem, type SourceResult } from './connectors';
 import { loadSettings, type Settings } from './settings';
 import { createTask, logAgentRun, logMemory } from './db';
+import { deriveLoops, loopsForPrompt } from './loops';
+import { docsForPrompt } from './docs';
 
 /**
  * ONE-SHOT EXECUTIVE PASS.
@@ -94,6 +96,8 @@ function briefSystem(s: Settings): string {
     (ctx ? ` Operator context: ${ctx}.` : '') +
     ' You receive a raw digest of their real work signals (Pumble team chat, Gmail personal inbox, Zoho company inbox). ' +
     'Items flagged DM, MENTIONS-YOU, or ATTN(...) were pre-screened as likely needing the operator — weigh them heavily. ' +
+    'If an OPERATOR CONTEXT LIBRARY block is present, treat it as ground truth about the business. ' +
+    'If OPEN LOOPS are present, oldest unresolved commitments deserve priority — nag about anything > 2 days old. ' +
     'In ONE pass, produce their executive brief as strict JSON. Rules: be ruthless about priority — only genuinely actionable items ' +
     'become priorities (max 6). Ignore newsletters, notifications, and noise. Suggested replies only for ' +
     `messages that clearly await ${name} (max 3, ≤60 words each, their voice: warm, precise, outcome-driven). ` +
@@ -137,35 +141,51 @@ export function extractJson(raw: string): any {
   throw new Error('Unbalanced JSON in model output');
 }
 
-/** One OpenRouter chat call; retries without response_format if the model rejects it (Kimi-safe). */
-async function callModel(apiKey: string, model: string, system: string, user: string): Promise<string> {
+/**
+ * One OpenRouter chat call. Model-agnostic:
+ *  - retries without response_format if the model rejects it (Kimi-safe)
+ *  - optional reasoning effort for reasoning models (Kimi K3, R1, o-series)
+ *  - retries without reasoning if the route rejects that too
+ */
+async function callModel(apiKey: string, model: string, system: string, user: string, reasoning?: string): Promise<string> {
   const payload: Record<string, unknown> = {
     model,
     temperature: 0.2,
-    max_tokens: 1600,
+    max_tokens: 2400,
     messages: [
       { role: 'system', content: system },
       { role: 'user', content: user },
     ],
   };
-  const attempt = async (withFormat: boolean) => {
+  const effort = reasoning && reasoning !== 'off' ? reasoning : undefined;
+  const attempt = async (withFormat: boolean, withReasoning: boolean) => {
+    const body: Record<string, unknown> = { ...payload };
+    if (withFormat) body.response_format = { type: 'json_object' };
+    if (withReasoning && effort) body.reasoning = { effort };
     const res = await fetch('https://openrouter.ai/api/v1/chat/completions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(withFormat ? { ...payload, response_format: { type: 'json_object' } } : payload),
+      body: JSON.stringify(body),
     });
     const json = (await res.json()) as any;
     if (!res.ok) throw new Error(json?.error?.message ?? `OpenRouter ${res.status}`);
     return String(json.choices?.[0]?.message?.content ?? '');
   };
   try {
-    return await attempt(true);
+    return await attempt(true, true);
   } catch (e) {
     const msg = (e as Error).message.toLowerCase();
-    // Some models (incl. certain Kimi/Moonshot routes) reject response_format — retry plain.
+    // Some models reject response_format or reasoning params — degrade gracefully.
     if (msg.includes('response_format') || msg.includes('json_object') || msg.includes('not supported')) {
-      return attempt(false);
+      try {
+        return await attempt(false, true);
+      } catch (e2) {
+        const m2 = (e2 as Error).message.toLowerCase();
+        if (m2.includes('reasoning')) return attempt(false, false);
+        throw e2;
+      }
     }
+    if (msg.includes('reasoning')) return attempt(true, false);
     throw e;
   }
 }
@@ -187,11 +207,16 @@ export async function runBrief(env: Env, opts: { force?: boolean } = {}): Promis
   const anyConfigured = results.some((r) => r.configured);
   const digest = digestForPrompt(results);
 
-  // 2) Persist people + items durably (identity layer + system of record).
+  // 2) Persist people + items durably, then derive open loops (all zero-LLM).
   try {
     await persistPass(db, results, people);
   } catch {
     /* tables may not exist before migration — non-fatal */
+  }
+  try {
+    await deriveLoops(db, results);
+  } catch {
+    /* loops table may not exist before migration — non-fatal */
   }
 
   const base: Brief = {
@@ -246,11 +271,19 @@ export async function runBrief(env: Env, opts: { force?: boolean } = {}): Promis
   // 3) The single LLM call.
   const model = settings.OPENROUTER_MODEL || 'anthropic/claude-3.5-sonnet';
   try {
+    const [loopCtx, docCtx] = await Promise.all([loopsForPrompt(db, 8), docsForPrompt(db, 3000)]);
+    const userMsg = [
+      `Today: ${new Date().toUTCString()}`,
+      docCtx,
+      loopCtx,
+      `DIGEST:\n${digest}`,
+    ].filter(Boolean).join('\n\n');
     const raw = await callModel(
       settings.OPENROUTER_API_KEY,
       model,
       briefSystem(settings),
-      `Today: ${new Date().toUTCString()}\n\nDIGEST:\n${digest}`,
+      userMsg,
+      settings.OPENROUTER_REASONING,
     );
     const parsed = extractJson(raw);
 

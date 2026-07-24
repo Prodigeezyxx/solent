@@ -2,6 +2,7 @@ export interface Env {
   DB: D1Database;
   OPENROUTER_API_KEY?: string;
   OPENROUTER_MODEL?: string;
+  OPENROUTER_REASONING?: string;
   APP_URL?: string;
   // Connector secrets (optional; can also be set at runtime via /api/settings)
   PUMBLE_API_KEY?: string;

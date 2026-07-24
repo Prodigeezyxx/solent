@@ -8,6 +8,8 @@ import {
 import type { Mode, Task, Message } from '../types';
 import type { Brief, InboxItem } from '../lib/api';
 import KnowledgeGraph from './KnowledgeGraph';
+import OpenLoops from './OpenLoops';
+import ItemContextDrawer from './ItemContextDrawer';
 
 interface CenterStageProps {
   mode: Mode;
@@ -33,6 +35,7 @@ export default function CenterStage({
   const [input, setInput] = useState('');
   const [focusRunning, setFocusRunning] = useState(false);
   const [focusSeconds, setFocusSeconds] = useState(FOCUS_SECONDS);
+  const [contextItem, setContextItem] = useState<InboxItem | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const completed = tasks.filter((t) => t.done).length;
@@ -74,11 +77,13 @@ export default function CenterStage({
             briefRunning={briefRunning}
             onRunBrief={onRunBrief}
             onOpenSources={onOpenSources}
+            onSend={onSend}
+            onInspect={setContextItem}
           />
         )}
 
         {mode === 'RECEIVE' && (
-          <ReceiveView brief={brief} briefRunning={briefRunning} onRunBrief={onRunBrief} onOpenSources={onOpenSources} onSend={onSend} />
+          <ReceiveView brief={brief} briefRunning={briefRunning} onRunBrief={onRunBrief} onOpenSources={onOpenSources} onSend={onSend} onInspect={setContextItem} />
         )}
 
         {mode === 'FOCUS' && (
@@ -94,6 +99,8 @@ export default function CenterStage({
         {mode === 'PERFORMANCE' && <PerformanceView completed={completed} tasks={tasks} />}
 
         {mode === 'GRAPH' && <KnowledgeGraph onRunBrief={onRunBrief} briefRunning={briefRunning} />}
+
+        <ItemContextDrawer item={contextItem} onClose={() => setContextItem(null)} onDraft={onSend} />
 
         {showChat && (
           <div className="h-full flex flex-col">
@@ -233,12 +240,15 @@ function SourceChips({ brief, onOpenSources }: { brief: Brief | null; onOpenSour
 }
 
 function Dashboard({
-  completed, tasks, onToggleTask, onOpenPalette, onToggleContext, brief, briefRunning, onRunBrief, onOpenSources,
+  completed, tasks, onToggleTask, onOpenPalette, onToggleContext, brief, briefRunning, onRunBrief, onOpenSources, onSend, onInspect,
 }: {
   completed: number; tasks: Task[]; onToggleTask: (id: number) => void;
   onOpenPalette: () => void; onToggleContext: () => void;
   brief: Brief | null; briefRunning: boolean; onRunBrief: () => void; onOpenSources: () => void;
+  onSend: (text: string) => void; onInspect: (item: InboxItem) => void;
 }) {
+  const [showAttention, setShowAttention] = useState(false);
+  const attentionItems = (brief?.inbox ?? []).filter((i) => i.needsAttention);
   const today = new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' }).toUpperCase();
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
@@ -286,11 +296,44 @@ function Dashboard({
       )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-px rounded-xl border border-nexus-border bg-nexus-border overflow-hidden mb-4">
-        <Metric icon={<AlertTriangle className="w-4 h-4" />} color={'nexus-orange' as const} value={`${needsYou}`} label="Needs you" tag={needsYou ? 'act now' : 'clear'} />
+        <button onClick={() => setShowAttention((v) => !v)} className="text-left cursor-pointer" title="Click to see what needs you, with context">
+          <Metric icon={<AlertTriangle className="w-4 h-4" />} color={'nexus-orange' as const} value={`${needsYou}`} label="Needs you" tag={needsYou ? (showAttention ? 'hide ▴' : 'show ▾') : 'clear'} />
+        </button>
         <Metric icon={<Radio className="w-4 h-4" />} color={'nexus-purple' as const} value={`${inboxCount}`} label="Items in last pass" tag={brief ? 'scanned' : '—'} />
         <Metric icon={<Clock3 className="w-4 h-4" />} color={'nexus-blue' as const} value={`${replyCount}`} label="Replies drafted" tag={replyCount ? 'awaiting you' : '—'} />
         <Metric icon={<Gauge className="w-4 h-4" />} color={'nexus-mint' as const} value={`${connected}`} sub="/3" label="Sources connected" tag={connected ? 'online' : 'connect'} />
       </div>
+
+      {/* Expanded attention queue — every flagged item, clickable for full context */}
+      {showAttention && attentionItems.length > 0 && (
+        <section className="mb-4 rounded-xl border border-nexus-orange/25 bg-nexus-orange/[.03] overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-nexus-orange/20 flex items-center gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 text-nexus-orange" />
+            <h2 className="text-xs font-semibold text-zinc-200">Needs you — click any item for full context</h2>
+          </div>
+          {attentionItems.map((it, i) => (
+            <button
+              key={`${it.source}-${it.ref}-${i}`}
+              onClick={() => onInspect(it)}
+              className="w-full flex items-start gap-3 px-4 py-2.5 border-b border-nexus-border/30 last:border-0 text-left hover:bg-white/[.03] transition-colors"
+            >
+              <span className={`mt-0.5 w-5 h-5 rounded grid place-items-center shrink-0 text-[9px] ${SOURCE_TONE[it.source]}`}>{SOURCE_ICON[it.source]}</span>
+              <span className="min-w-0 flex-1">
+                <span className="flex items-center gap-2 flex-wrap">
+                  <strong className="text-[11px] font-medium text-zinc-300">{it.from}</strong>
+                  {it.channel && <span className="px-1.5 py-0.5 rounded bg-nexus-border/60 text-[9px] font-mono text-nexus-dim">{it.channel}</span>}
+                  <span className="text-[9px] font-mono text-nexus-orange">{it.attentionReason}</span>
+                </span>
+                <span className="block text-[10px] text-nexus-muted mt-0.5 line-clamp-1">{it.text}</span>
+              </span>
+              <ChevronRight className="w-3.5 h-3.5 text-nexus-dim shrink-0 mt-1" />
+            </button>
+          ))}
+        </section>
+      )}
+
+      {/* Open loops — commitments in flight, derived from every pass */}
+      <div className="mb-4"><OpenLoops refreshKey={brief?.generated_at ?? 0} onDraft={onSend} /></div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <section className="lg:col-span-2 rounded-xl border border-nexus-border bg-nexus-surface/90 overflow-hidden">
@@ -435,9 +478,9 @@ function Metric({ icon, color, value, sub, label, tag }: { icon: React.ReactNode
 }
 
 function ReceiveView({
-  brief, briefRunning, onRunBrief, onOpenSources, onSend,
+  brief, briefRunning, onRunBrief, onOpenSources, onSend, onInspect,
 }: {
-  brief: Brief | null; briefRunning: boolean; onRunBrief: () => void; onOpenSources: () => void; onSend: (text: string) => void;
+  brief: Brief | null; briefRunning: boolean; onRunBrief: () => void; onOpenSources: () => void; onSend: (text: string) => void; onInspect: (item: InboxItem) => void;
 }) {
   const [filter, setFilter] = useState<'all' | 'attention' | 'pumble' | 'gmail' | 'zoho'>('all');
   const inbox: InboxItem[] = (brief?.inbox ?? [])
@@ -529,7 +572,15 @@ function ReceiveView({
           </div>
         )}
         {inbox.map((item, i) => (
-          <div key={`${item.source}-${item.ref}-${i}`} className={`flex items-start gap-3 px-4 py-3 border-b border-nexus-border/40 last:border-0 hover:bg-white/[.02] transition-colors ${item.needsAttention ? 'bg-nexus-orange/[.03] border-l-2 border-l-nexus-orange/60' : ''}`}>
+          <div
+            key={`${item.source}-${item.ref}-${i}`}
+            onClick={() => onInspect(item)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === 'Enter') onInspect(item); }}
+            className={`flex items-start gap-3 px-4 py-3 border-b border-nexus-border/40 last:border-0 hover:bg-white/[.03] transition-colors cursor-pointer ${item.needsAttention ? 'bg-nexus-orange/[.03] border-l-2 border-l-nexus-orange/60' : ''}`}
+            title="Click for full context"
+          >
             <span className={`mt-0.5 w-6 h-6 rounded grid place-items-center shrink-0 ${SOURCE_TONE[item.source]}`}>{SOURCE_ICON[item.source]}</span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
@@ -545,7 +596,7 @@ function ReceiveView({
               <p className="text-[11px] text-nexus-muted leading-relaxed mt-0.5 line-clamp-2">{item.text}</p>
             </div>
             <button
-              onClick={() => onSend(`Draft a reply to this ${item.source} message from ${item.from} (${item.title}): "${item.text}"`)}
+              onClick={(e) => { e.stopPropagation(); onSend(`Draft a reply to this ${item.source} message from ${item.from} (${item.title}): "${item.text}"`); }}
               className="shrink-0 text-[9px] font-mono text-nexus-dim hover:text-nexus-mint transition-colors mt-0.5"
               title="Draft a reply with CONDUCTOR"
             >

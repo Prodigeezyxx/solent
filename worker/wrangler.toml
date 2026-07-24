@@ -27,4 +27,5 @@ migrations_dir = "migrations"
 # APP_URL             - optional, your deployment URL
 
 [vars]
-OPENROUTER_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
+# Default model; overridable at runtime from Sources → Model picker.
+OPENROUTER_MODEL = "moonshotai/kimi-k3"

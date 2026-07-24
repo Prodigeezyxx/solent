@@ -24,6 +24,7 @@ export const SETTING_KEYS = [
   // LLM
   'OPENROUTER_API_KEY',
   'OPENROUTER_MODEL',
+  'OPENROUTER_REASONING', // off | low | medium | high — reasoning effort for models that support it
   // Operator identity — personalises prompts and attention detection
   'OPERATOR_NAME',
   'OPERATOR_CONTEXT', // e.g. "Founder of Floats XR and realmspace; priorities: GTM partnerships, product velocity"
