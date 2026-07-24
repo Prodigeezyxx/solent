@@ -108,7 +108,7 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
 function buildSystem(liveContext: string, loopCtx: string, docCtx: string, operatorName?: string, operatorContext?: string): string {
   const who = operatorName?.trim() || 'the operator';
   return (
-    `You are CONDUCTOR, the orchestrator of NEXUS, an AI-native personal command centre for ${who}. ` +
+    `You are CONDUCTOR, the orchestrator of SOLENT, an AI-native personal command centre for ${who}. ` +
     (operatorContext?.trim() ? `Operator context: ${operatorContext.trim()}. ` : '') +
     'You have a council of specialist agents you can dispatch by calling tools. Choose the right agent for each job.\n\n' +
     'Available agents:\n' +

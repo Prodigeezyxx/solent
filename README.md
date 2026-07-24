@@ -1,6 +1,6 @@
-# NEXUS Command Centre
+# SOLENT Command Centre
 
-NEXUS is your **second executive-function layer**: it connects your real work sources — **Pumble** (team chat), **Gmail** (personal), and **Zoho Mail** (company) — pulls everything in **one shot**, triages it with a **single model call**, and turns it into priorities, signals, and drafted replies.
+SOLENT is your **second executive-function layer**: it connects your real work sources — **Pumble** (team chat), **Gmail** (personal), and **Zoho Mail** (company) — pulls everything in **one shot**, triages it with a **single model call**, and turns it into priorities, signals, and drafted replies.
 
 ## How the one-shot pass works (credit optimisation)
 
@@ -13,7 +13,7 @@ NEXUS is your **second executive-function layer**: it connects your real work so
 ## Completed features
 
 - **One-shot executive brief** — `POST /api/brief` pulls all sources → one LLM call → priorities persisted as tasks in D1
-- **Identity layer** — Pumble workspace directory (`/listUsers` + `/myInfo`) cached 24h in D1; every message shows a **real human name**, `<@mention>` tokens are expanded to `@Name`, and NEXUS knows who *you* are
+- **Identity layer** — Pumble workspace directory (`/listUsers` + `/myInfo`) cached 24h in D1; every message shows a **real human name**, `<@mention>` tokens are expanded to `@Name`, and SOLENT knows who *you* are
 - **Attention engine (zero-LLM)** — deterministic heuristics flag DMs, @mentions of you, direct asks/questions, and urgency keywords → `needs you` badges, a durable attention queue (`GET /api/attention`), and "Needs you" as the first dashboard metric
 - **Durable inbox** — every pass upserts people + items into D1 (`people`, `items` tables), so the graph and attention queue survive cache expiry
 - **Kimi / model-agnostic** — `response_format` fallback retry + tolerant balanced-brace JSON extraction; set `OPENROUTER_MODEL` to `moonshotai/kimi-k2` (or any slug) and it just works
@@ -30,7 +30,7 @@ NEXUS is your **second executive-function layer**: it connects your real work so
 - **Unified RECEIVE inbox** — all three sources merged, filterable, with per-item "reply →" handoff to CONDUCTOR
 - **HERMES reply drafts** — the brief proposes ≤3 replies for messages awaiting you; refine them in the chat thread
 - **Live dashboard** — headline, executive summary, source health chips, real task queue from D1
-- **Knowledge graph (GRAPH mode)** — interactive force-directed relationship tree: NEXUS → sources → people → messages → derived priorities, signals, drafts, logged notes and decisions. Drag nodes, zoom/pan, filter by type, click for a detail card with connections. Built from D1 with zero LLM cost (`GET /api/graph`)
+- **Knowledge graph (GRAPH mode)** — interactive force-directed relationship tree: SOLENT → sources → people → messages → derived priorities, signals, drafts, logged notes and decisions. Drag nodes, zoom/pan, filter by type, click for a detail card with connections. Built from D1 with zero LLM cost (`GET /api/graph`)
 - **Fresh console** — zero seeded/mock data; every panel starts empty and fills only from your real sources
 - **CONDUCTOR chat** (DEEP mode) — tool-calling orchestrator (capture task / complete / memory / decision) with cached-brief context
 - Single-process serving: the Cloudflare Worker serves both the API and the built React app
@@ -71,7 +71,7 @@ Credentials can also be provided as Worker secrets (`wrangler secret put PUMBLE_
 ```bash
 npm install && npm run build          # build the UI
 cd worker && npm install
-npx wrangler d1 migrations apply nexus-db --local
+npx wrangler d1 migrations apply solent-db --local
 npx wrangler dev --port 3000          # serves API + UI together
 ```
 

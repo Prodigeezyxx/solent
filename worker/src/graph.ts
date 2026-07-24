@@ -64,7 +64,7 @@ export async function buildGraph(db: D1Database): Promise<Graph> {
     if (!edges.some((e) => e.from === from && e.to === to && e.kind === kind)) edges.push({ from, to, kind });
   };
 
-  addNode({ id: 'hub', type: 'hub', label: 'NEXUS', detail: 'Your executive layer', weight: 10 });
+  addNode({ id: 'hub', type: 'hub', label: 'SOLENT', detail: 'Your executive layer', weight: 10 });
 
   // ---- Brief cache: source health + LLM outputs -------------------------
   let brief: Brief | null = null;

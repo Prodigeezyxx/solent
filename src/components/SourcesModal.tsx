@@ -156,14 +156,14 @@ export default function SourcesModal({ isOpen, onClose, sources, onSaved }: Sour
             exit={{ opacity: 0, scale: 0.97, y: 8 }}
             onClick={(e) => e.stopPropagation()}
             onSubmit={submit}
-            className="w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-xl border border-nexus-border bg-nexus-surface shadow-2xl"
+            className="w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-xl border border-solent-border bg-solent-surface shadow-2xl"
           >
-            <div className="sticky top-0 z-10 flex items-center justify-between p-4 border-b border-nexus-border/60 bg-nexus-surface">
+            <div className="sticky top-0 z-10 flex items-center justify-between p-4 border-b border-solent-border/60 bg-solent-surface">
               <div className="flex items-center gap-2">
-                <Plug className="w-4 h-4 text-nexus-mint" />
-                <h2 className="text-sm font-semibold text-nexus-text">Sources & credentials</h2>
+                <Plug className="w-4 h-4 text-solent-mint" />
+                <h2 className="text-sm font-semibold text-solent-text">Sources & credentials</h2>
               </div>
-              <button type="button" onClick={onClose} className="text-nexus-dim hover:text-nexus-text" aria-label="Close sources">
+              <button type="button" onClick={onClose} className="text-solent-dim hover:text-solent-text" aria-label="Close sources">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -172,32 +172,32 @@ export default function SourcesModal({ isOpen, onClose, sources, onSaved }: Sour
               {GROUPS.map((g) => {
                 const m = g.id !== 'llm' ? meta(g.id) : undefined;
                 return (
-                  <section key={g.id} className="rounded-lg border border-nexus-border/60 overflow-hidden">
-                    <div className="flex items-center justify-between px-3 py-2.5 bg-black/20 border-b border-nexus-border/50">
+                  <section key={g.id} className="rounded-lg border border-solent-border/60 overflow-hidden">
+                    <div className="flex items-center justify-between px-3 py-2.5 bg-black/20 border-b border-solent-border/50">
                       <h3 className="text-xs font-semibold text-zinc-200">{g.title}</h3>
                       {m && (
-                        <span className={`flex items-center gap-1 text-[10px] font-mono ${m.ok ? 'text-nexus-mint' : m.configured ? 'text-nexus-orange' : 'text-nexus-dim'}`}>
+                        <span className={`flex items-center gap-1 text-[10px] font-mono ${m.ok ? 'text-solent-mint' : m.configured ? 'text-solent-orange' : 'text-solent-dim'}`}>
                           {m.ok ? <CheckCircle2 className="w-3 h-3" /> : <Circle className="w-3 h-3" />}
                           {m.ok ? `connected · ${m.count} items` : m.configured ? m.error ?? 'error' : 'not connected'}
                         </span>
                       )}
                     </div>
-                    <p className="px-3 pt-2 text-[10px] text-nexus-dim leading-relaxed">{g.hint}</p>
+                    <p className="px-3 pt-2 text-[10px] text-solent-dim leading-relaxed">{g.hint}</p>
                     <div className="p-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {g.fields.map((f) => {
                         const set = status[f.key];
                         const isSet = f.secret ? set === true : typeof set === 'string' && set !== '';
                         return (
                           <label key={f.key} className="block">
-                            <span className="block text-[10px] font-mono text-nexus-dim mb-1 uppercase tracking-wider">
-                              {f.label} {isSet && <em className="not-italic text-nexus-mint">· set</em>}
+                            <span className="block text-[10px] font-mono text-solent-dim mb-1 uppercase tracking-wider">
+                              {f.label} {isSet && <em className="not-italic text-solent-mint">· set</em>}
                             </span>
                             <input
                               type={f.secret ? 'password' : 'text'}
                               value={draft[f.key] ?? (f.secret ? '' : typeof set === 'string' ? set : '')}
                               onChange={(e) => setDraft((d) => ({ ...d, [f.key]: e.target.value }))}
                               placeholder={f.secret && isSet ? '••••••••  (leave blank to keep)' : f.placeholder ?? ''}
-                              className="w-full bg-black/30 border border-nexus-border rounded px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-nexus-mint/50 placeholder:text-nexus-dim/60"
+                              className="w-full bg-black/30 border border-solent-border rounded px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-solent-mint/50 placeholder:text-solent-dim/60"
                             />
                           </label>
                         );
@@ -208,12 +208,12 @@ export default function SourcesModal({ isOpen, onClose, sources, onSaved }: Sour
               })}
 
               {/* ---- Model picker: frontier-level presets ---- */}
-              <section className="rounded-lg border border-nexus-border/60 overflow-hidden">
-                <div className="flex items-center justify-between px-3 py-2.5 bg-black/20 border-b border-nexus-border/50">
-                  <h3 className="flex items-center gap-1.5 text-xs font-semibold text-zinc-200"><Brain className="w-3.5 h-3.5 text-nexus-purple" /> Model picker</h3>
-                  <span className="text-[9px] font-mono text-nexus-dim">{currentModel || 'default'}</span>
+              <section className="rounded-lg border border-solent-border/60 overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2.5 bg-black/20 border-b border-solent-border/50">
+                  <h3 className="flex items-center gap-1.5 text-xs font-semibold text-zinc-200"><Brain className="w-3.5 h-3.5 text-solent-purple" /> Model picker</h3>
+                  <span className="text-[9px] font-mono text-solent-dim">{currentModel || 'default'}</span>
                 </div>
-                <p className="px-3 pt-2 text-[10px] text-nexus-dim leading-relaxed">
+                <p className="px-3 pt-2 text-[10px] text-solent-dim leading-relaxed">
                   One model runs everything — the brief AND the CONDUCTOR orchestration. Presets are frontier-level at sane prices; reasoning effort applies to models that support it (Kimi K3, R1, Qwen3).
                 </p>
                 <div className="p-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -224,32 +224,32 @@ export default function SourcesModal({ isOpen, onClose, sources, onSaved }: Sour
                         key={m.id}
                         type="button"
                         onClick={() => setDraft((d) => ({ ...d, OPENROUTER_MODEL: m.id }))}
-                        className={`text-left rounded-lg border px-3 py-2.5 transition-colors ${active ? 'border-nexus-mint/50 bg-nexus-mint/[.06]' : 'border-nexus-border hover:border-nexus-border/80 bg-black/20'}`}
+                        className={`text-left rounded-lg border px-3 py-2.5 transition-colors ${active ? 'border-solent-mint/50 bg-solent-mint/[.06]' : 'border-solent-border hover:border-solent-border/80 bg-black/20'}`}
                       >
                         <span className="flex items-center gap-2">
-                          <strong className={`text-[11px] font-semibold ${active ? 'text-nexus-mint' : 'text-zinc-200'}`}>{m.name}</strong>
-                          {m.reasoning && <span className="px-1.5 py-0.5 rounded bg-nexus-purple/10 text-[8px] font-mono text-nexus-purple uppercase">reasoning</span>}
-                          <span className="ml-auto text-[8px] font-mono text-nexus-dim">{m.price}</span>
+                          <strong className={`text-[11px] font-semibold ${active ? 'text-solent-mint' : 'text-zinc-200'}`}>{m.name}</strong>
+                          {m.reasoning && <span className="px-1.5 py-0.5 rounded bg-solent-purple/10 text-[8px] font-mono text-solent-purple uppercase">reasoning</span>}
+                          <span className="ml-auto text-[8px] font-mono text-solent-dim">{m.price}</span>
                         </span>
-                        <span className="block text-[9px] font-mono text-nexus-dim mt-0.5">{m.vendor} · {m.tier}</span>
-                        <span className="block text-[9px] text-nexus-muted mt-1 leading-relaxed">{m.note}</span>
+                        <span className="block text-[9px] font-mono text-solent-dim mt-0.5">{m.vendor} · {m.tier}</span>
+                        <span className="block text-[9px] text-solent-muted mt-1 leading-relaxed">{m.note}</span>
                       </button>
                     );
                   })}
                 </div>
                 <div className="px-3 pb-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <label className="block">
-                    <span className="block text-[10px] font-mono text-nexus-dim mb-1 uppercase tracking-wider">Custom slug (any OpenRouter model)</span>
+                    <span className="block text-[10px] font-mono text-solent-dim mb-1 uppercase tracking-wider">Custom slug (any OpenRouter model)</span>
                     <input
                       type="text"
                       value={draft.OPENROUTER_MODEL ?? currentModel}
                       onChange={(e) => setDraft((d) => ({ ...d, OPENROUTER_MODEL: e.target.value }))}
                       placeholder="moonshotai/kimi-k3"
-                      className="w-full bg-black/30 border border-nexus-border rounded px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-nexus-mint/50 placeholder:text-nexus-dim/60"
+                      className="w-full bg-black/30 border border-solent-border rounded px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-solent-mint/50 placeholder:text-solent-dim/60"
                     />
                   </label>
                   <div>
-                    <span className="block text-[10px] font-mono text-nexus-dim mb-1 uppercase tracking-wider">Reasoning effort</span>
+                    <span className="block text-[10px] font-mono text-solent-dim mb-1 uppercase tracking-wider">Reasoning effort</span>
                     <div className="flex items-center gap-1">
                       {REASONING_LEVELS.map((lvl) => (
                         <button
@@ -257,7 +257,7 @@ export default function SourcesModal({ isOpen, onClose, sources, onSaved }: Sour
                           type="button"
                           onClick={() => setDraft((d) => ({ ...d, OPENROUTER_REASONING: lvl }))}
                           className={`flex-1 h-[30px] rounded border text-[10px] font-mono uppercase transition-colors ${
-                            currentReasoning === lvl ? 'border-nexus-purple/60 bg-nexus-purple/10 text-nexus-purple' : 'border-nexus-border text-nexus-dim hover:text-nexus-text'
+                            currentReasoning === lvl ? 'border-solent-purple/60 bg-solent-purple/10 text-solent-purple' : 'border-solent-border text-solent-dim hover:text-solent-text'
                           }`}
                         >
                           {lvl}
@@ -269,22 +269,22 @@ export default function SourcesModal({ isOpen, onClose, sources, onSaved }: Sour
               </section>
 
               {/* ---- Context library: docs the model treats as ground truth ---- */}
-              <section className="rounded-lg border border-nexus-border/60 overflow-hidden">
-                <div className="flex items-center justify-between px-3 py-2.5 bg-black/20 border-b border-nexus-border/50">
-                  <h3 className="flex items-center gap-1.5 text-xs font-semibold text-zinc-200"><BookOpen className="w-3.5 h-3.5 text-nexus-blue" /> Context library</h3>
-                  <span className="text-[9px] font-mono text-nexus-dim">{docs.length} doc{docs.length === 1 ? '' : 's'}</span>
+              <section className="rounded-lg border border-solent-border/60 overflow-hidden">
+                <div className="flex items-center justify-between px-3 py-2.5 bg-black/20 border-b border-solent-border/50">
+                  <h3 className="flex items-center gap-1.5 text-xs font-semibold text-zinc-200"><BookOpen className="w-3.5 h-3.5 text-solent-blue" /> Context library</h3>
+                  <span className="text-[9px] font-mono text-solent-dim">{docs.length} doc{docs.length === 1 ? '' : 's'}</span>
                 </div>
-                <p className="px-3 pt-2 text-[10px] text-nexus-dim leading-relaxed">
+                <p className="px-3 pt-2 text-[10px] text-solent-dim leading-relaxed">
                   Paste strategy memos, product notes, investor context — anything the model should treat as ground truth. Injected compactly into every brief and CONDUCTOR chat (no extra model calls). You can also just paste a doc into the chat and ask CONDUCTOR to save it.
                 </p>
                 <div className="p-3 space-y-2">
                   {docs.map((d) => (
-                    <div key={d.id} className="flex items-start gap-2 rounded border border-nexus-border/60 bg-black/20 px-2.5 py-2">
+                    <div key={d.id} className="flex items-start gap-2 rounded border border-solent-border/60 bg-black/20 px-2.5 py-2">
                       <div className="min-w-0 flex-1">
                         <strong className="block text-[11px] font-medium text-zinc-300 truncate">{d.title}</strong>
-                        <small className="block text-[9px] text-nexus-dim truncate">{d.preview}… · {Math.round(d.size / 100) / 10}k chars</small>
+                        <small className="block text-[9px] text-solent-dim truncate">{d.preview}… · {Math.round(d.size / 100) / 10}k chars</small>
                       </div>
-                      <button type="button" onClick={() => removeDoc(d.id)} className="p-1 text-nexus-dim hover:text-nexus-orange transition-colors" title="Delete doc">
+                      <button type="button" onClick={() => removeDoc(d.id)} className="p-1 text-solent-dim hover:text-solent-orange transition-colors" title="Delete doc">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -294,20 +294,20 @@ export default function SourcesModal({ isOpen, onClose, sources, onSaved }: Sour
                     value={docTitle}
                     onChange={(e) => setDocTitle(e.target.value)}
                     placeholder="Doc title, e.g. 'Q3 strategy memo'"
-                    className="w-full bg-black/30 border border-nexus-border rounded px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-nexus-blue/50 placeholder:text-nexus-dim/60"
+                    className="w-full bg-black/30 border border-solent-border rounded px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-solent-blue/50 placeholder:text-solent-dim/60"
                   />
                   <textarea
                     value={docContent}
                     onChange={(e) => setDocContent(e.target.value)}
                     placeholder="Paste the content here…"
                     rows={4}
-                    className="w-full bg-black/30 border border-nexus-border rounded px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-nexus-blue/50 placeholder:text-nexus-dim/60 resize-y"
+                    className="w-full bg-black/30 border border-solent-border rounded px-2.5 py-1.5 text-xs text-zinc-200 outline-none focus:border-solent-blue/50 placeholder:text-solent-dim/60 resize-y"
                   />
                   <button
                     type="button"
                     onClick={addDoc}
                     disabled={docSaving || !docTitle.trim() || !docContent.trim()}
-                    className="flex items-center gap-1.5 px-3 h-8 rounded-md border border-nexus-blue/40 text-nexus-blue text-xs font-semibold hover:bg-nexus-blue/10 disabled:opacity-50 transition-colors"
+                    className="flex items-center gap-1.5 px-3 h-8 rounded-md border border-solent-blue/40 text-solent-blue text-xs font-semibold hover:bg-solent-blue/10 disabled:opacity-50 transition-colors"
                   >
                     {docSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />} Add to library
                   </button>
@@ -315,12 +315,12 @@ export default function SourcesModal({ isOpen, onClose, sources, onSaved }: Sour
               </section>
             </div>
 
-            <div className="sticky bottom-0 flex items-center justify-between gap-3 p-4 border-t border-nexus-border/60 bg-nexus-surface">
-              <span className="text-[10px] text-nexus-dim">{note || 'Secrets are stored server-side and never echoed back.'}</span>
+            <div className="sticky bottom-0 flex items-center justify-between gap-3 p-4 border-t border-solent-border/60 bg-solent-surface">
+              <span className="text-[10px] text-solent-dim">{note || 'Secrets are stored server-side and never echoed back.'}</span>
               <button
                 type="submit"
                 disabled={saving}
-                className="flex items-center gap-2 px-4 h-8 rounded-md bg-nexus-mint text-nexus-bg text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
+                className="flex items-center gap-2 px-4 h-8 rounded-md bg-solent-mint text-solent-bg text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
               >
                 {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Save sources
               </button>

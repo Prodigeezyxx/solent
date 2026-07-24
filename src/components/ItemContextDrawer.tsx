@@ -68,13 +68,13 @@ export default function ItemContextDrawer({ item, onClose, onDraft, onHandled }:
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
             transition={{ type: 'spring', damping: 28, stiffness: 300 }}
-            className="fixed right-0 top-0 bottom-0 z-[121] w-full max-w-md bg-nexus-surface border-l border-nexus-border shadow-2xl overflow-y-auto"
+            className="fixed right-0 top-0 bottom-0 z-[121] w-full max-w-md bg-solent-surface border-l border-solent-border shadow-2xl overflow-y-auto"
           >
-            <div className="sticky top-0 z-10 flex items-center justify-between p-4 border-b border-nexus-border/60 bg-nexus-surface">
-              <span className="flex items-center gap-2 text-[10px] font-mono tracking-widest text-nexus-dim uppercase">
+            <div className="sticky top-0 z-10 flex items-center justify-between p-4 border-b border-solent-border/60 bg-solent-surface">
+              <span className="flex items-center gap-2 text-[10px] font-mono tracking-widest text-solent-dim uppercase">
                 <MessageSquare className="w-3.5 h-3.5" /> Item context
               </span>
-              <button onClick={onClose} className="text-nexus-dim hover:text-nexus-text" aria-label="Close context">
+              <button onClick={onClose} className="text-solent-dim hover:text-solent-text" aria-label="Close context">
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -83,14 +83,14 @@ export default function ItemContextDrawer({ item, onClose, onDraft, onHandled }:
               {/* The message itself */}
               <section>
                 <div className="flex items-center gap-2 flex-wrap mb-2">
-                  <strong className="text-sm font-semibold text-nexus-text">{item.from}</strong>
-                  {item.channel && <span className="px-1.5 py-0.5 rounded bg-nexus-border/60 text-[9px] font-mono text-nexus-dim">{item.channel}</span>}
-                  {item.mentionsMe ? <span className="flex items-center gap-0.5 text-[9px] font-mono text-nexus-blue"><AtSign className="w-2.5 h-2.5" />you</span> : null}
-                  <span className="text-[9px] font-mono text-nexus-dim ml-auto">{fmtTs(item.ts)}</span>
+                  <strong className="text-sm font-semibold text-solent-text">{item.from}</strong>
+                  {item.channel && <span className="px-1.5 py-0.5 rounded bg-solent-border/60 text-[9px] font-mono text-solent-dim">{item.channel}</span>}
+                  {item.mentionsMe ? <span className="flex items-center gap-0.5 text-[9px] font-mono text-solent-blue"><AtSign className="w-2.5 h-2.5" />you</span> : null}
+                  <span className="text-[9px] font-mono text-solent-dim ml-auto">{fmtTs(item.ts)}</span>
                 </div>
-                <p className="text-xs text-zinc-300 leading-relaxed rounded-lg border border-nexus-border/60 bg-black/20 p-3">{item.text}</p>
+                <p className="text-xs text-zinc-300 leading-relaxed rounded-lg border border-solent-border/60 bg-black/20 p-3">{item.text}</p>
                 {item.needsAttention && (
-                  <p className="flex items-center gap-1.5 mt-2 text-[10px] font-mono text-nexus-orange">
+                  <p className="flex items-center gap-1.5 mt-2 text-[10px] font-mono text-solent-orange">
                     <AlertTriangle className="w-3 h-3" /> flagged: {item.attentionReason ?? 'needs you'}
                   </p>
                 )}
@@ -100,49 +100,49 @@ export default function ItemContextDrawer({ item, onClose, onDraft, onHandled }:
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => { onDraft(`Draft a reply to this ${item.source} message from ${item.from} (${item.channel ?? ''}): "${item.text}"`); onClose(); }}
-                  className="flex-1 h-8 rounded-md bg-nexus-mint text-nexus-bg text-xs font-semibold hover:opacity-90 transition-opacity"
+                  className="flex-1 h-8 rounded-md bg-solent-mint text-solent-bg text-xs font-semibold hover:opacity-90 transition-opacity"
                 >
                   Draft reply with CONDUCTOR
                 </button>
                 <button
                   onClick={markHandled}
                   disabled={!ctx || handled}
-                  className={`h-8 px-3 rounded-md border text-xs font-semibold transition-colors ${handled ? 'border-nexus-mint/40 text-nexus-mint' : 'border-nexus-border text-nexus-dim hover:text-nexus-text'} disabled:opacity-60`}
+                  className={`h-8 px-3 rounded-md border text-xs font-semibold transition-colors ${handled ? 'border-solent-mint/40 text-solent-mint' : 'border-solent-border text-solent-dim hover:text-solent-text'} disabled:opacity-60`}
                 >
                   {handled ? <span className="flex items-center gap-1"><Check className="w-3.5 h-3.5" /> handled</span> : 'Mark handled'}
                 </button>
               </div>
 
               {loading && (
-                <p className="flex items-center justify-center gap-2 py-6 text-[10px] font-mono text-nexus-dim">
+                <p className="flex items-center justify-center gap-2 py-6 text-[10px] font-mono text-solent-dim">
                   <Loader2 className="w-3.5 h-3.5 animate-spin" /> assembling context…
                 </p>
               )}
 
               {/* Person card */}
               {ctx?.person && (
-                <section className="rounded-lg border border-nexus-border/60 overflow-hidden">
-                  <div className="px-3 py-2 bg-black/20 border-b border-nexus-border/50 flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-widest text-nexus-dim">
+                <section className="rounded-lg border border-solent-border/60 overflow-hidden">
+                  <div className="px-3 py-2 bg-black/20 border-b border-solent-border/50 flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-widest text-solent-dim">
                     <User className="w-3 h-3" /> Who this is
                   </div>
                   <div className="p-3">
-                    <strong className="block text-xs font-semibold text-zinc-200">{ctx.person.name}{ctx.person.vip ? <span className="ml-1.5 text-[9px] font-mono text-nexus-orange">VIP</span> : null}</strong>
-                    {ctx.person.title && <small className="block text-[10px] text-nexus-muted mt-0.5">{ctx.person.title}</small>}
-                    {ctx.person.email && <small className="block text-[10px] font-mono text-nexus-dim mt-0.5">{ctx.person.email}</small>}
+                    <strong className="block text-xs font-semibold text-zinc-200">{ctx.person.name}{ctx.person.vip ? <span className="ml-1.5 text-[9px] font-mono text-solent-orange">VIP</span> : null}</strong>
+                    {ctx.person.title && <small className="block text-[10px] text-solent-muted mt-0.5">{ctx.person.title}</small>}
+                    {ctx.person.email && <small className="block text-[10px] font-mono text-solent-dim mt-0.5">{ctx.person.email}</small>}
                   </div>
                 </section>
               )}
 
               {/* Open loops with this person */}
               {ctx && ctx.loops.length > 0 && (
-                <section className="rounded-lg border border-nexus-orange/25 overflow-hidden">
-                  <div className="px-3 py-2 bg-nexus-orange/[.05] border-b border-nexus-orange/20 flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-widest text-nexus-orange">
+                <section className="rounded-lg border border-solent-orange/25 overflow-hidden">
+                  <div className="px-3 py-2 bg-solent-orange/[.05] border-b border-solent-orange/20 flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-widest text-solent-orange">
                     <RefreshCcw className="w-3 h-3" /> Open loops with {item.from}
                   </div>
                   {ctx.loops.map((l) => (
-                    <div key={l.id} className="px-3 py-2 border-b border-nexus-border/30 last:border-0">
-                      <span className="text-[9px] font-mono text-nexus-dim uppercase">{l.direction === 'inbound' ? 'you owe them' : 'you await them'}</span>
-                      <p className="text-[10px] text-nexus-muted mt-0.5 line-clamp-2">{l.ask}</p>
+                    <div key={l.id} className="px-3 py-2 border-b border-solent-border/30 last:border-0">
+                      <span className="text-[9px] font-mono text-solent-dim uppercase">{l.direction === 'inbound' ? 'you owe them' : 'you await them'}</span>
+                      <p className="text-[10px] text-solent-muted mt-0.5 line-clamp-2">{l.ask}</p>
                     </div>
                   ))}
                 </section>
@@ -150,25 +150,25 @@ export default function ItemContextDrawer({ item, onClose, onDraft, onHandled }:
 
               {/* Recent history with this person */}
               {ctx && ctx.history.length > 0 && (
-                <section className="rounded-lg border border-nexus-border/60 overflow-hidden">
-                  <div className="px-3 py-2 bg-black/20 border-b border-nexus-border/50 text-[9px] font-mono uppercase tracking-widest text-nexus-dim">
+                <section className="rounded-lg border border-solent-border/60 overflow-hidden">
+                  <div className="px-3 py-2 bg-black/20 border-b border-solent-border/50 text-[9px] font-mono uppercase tracking-widest text-solent-dim">
                     Recent from {item.from}
                   </div>
                   {ctx.history.map((h) => (
-                    <div key={h.id} className="px-3 py-2 border-b border-nexus-border/30 last:border-0">
+                    <div key={h.id} className="px-3 py-2 border-b border-solent-border/30 last:border-0">
                       <div className="flex items-center gap-2">
-                        {h.channel && <span className="text-[9px] font-mono text-nexus-dim">{h.channel}</span>}
-                        {h.needs_attention ? <span className="text-[9px] font-mono text-nexus-orange">⚠ {h.attention_reason}</span> : null}
-                        <span className="text-[9px] font-mono text-nexus-dim ml-auto">{fmtTs(h.ts)}</span>
+                        {h.channel && <span className="text-[9px] font-mono text-solent-dim">{h.channel}</span>}
+                        {h.needs_attention ? <span className="text-[9px] font-mono text-solent-orange">⚠ {h.attention_reason}</span> : null}
+                        <span className="text-[9px] font-mono text-solent-dim ml-auto">{fmtTs(h.ts)}</span>
                       </div>
-                      <p className="text-[10px] text-nexus-muted mt-0.5 line-clamp-2">{h.text}</p>
+                      <p className="text-[10px] text-solent-muted mt-0.5 line-clamp-2">{h.text}</p>
                     </div>
                   ))}
                 </section>
               )}
 
               {!loading && ctx && !ctx.person && ctx.history.length === 0 && ctx.loops.length === 0 && (
-                <p className="text-[10px] text-nexus-dim text-center py-4">No further history with {item.from} yet — this builds up pass by pass.</p>
+                <p className="text-[10px] text-solent-dim text-center py-4">No further history with {item.from} yet — this builds up pass by pass.</p>
               )}
             </div>
           </motion.aside>

@@ -62,7 +62,7 @@ export default function CenterStage({
   const showChat = mode === 'DEEP';
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 h-full bg-nexus-bg relative">
+    <div className="flex-1 flex flex-col min-w-0 h-full bg-solent-bg relative">
       <div className="absolute inset-0 bg-grid pointer-events-none opacity-100" />
 
       <div className="relative flex-1 overflow-y-auto">
@@ -113,14 +113,14 @@ export default function CenterStage({
                   className={`max-w-3xl mx-auto flex flex-col ${msg.sender === 'USER' ? 'items-end' : 'items-start'}`}
                 >
                   <div className="flex items-center gap-2 mb-2">
-                    <span className={`text-[10px] font-mono tracking-widest uppercase ${msg.sender === 'USER' ? 'text-nexus-dim' : 'text-nexus-mint'}`}>
+                    <span className={`text-[10px] font-mono tracking-widest uppercase ${msg.sender === 'USER' ? 'text-solent-dim' : 'text-solent-mint'}`}>
                       {msg.sender}
                     </span>
-                    <span className="text-[10px] font-mono text-nexus-dim">
+                    <span className="text-[10px] font-mono text-solent-dim">
                       {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
-                  <div className={`text-sm md:text-base leading-relaxed ${msg.sender === 'USER' ? 'text-zinc-300 bg-nexus-border/30 px-4 py-3 rounded-lg border border-nexus-border/50' : 'text-zinc-200'}`}>
+                  <div className={`text-sm md:text-base leading-relaxed ${msg.sender === 'USER' ? 'text-zinc-300 bg-solent-border/30 px-4 py-3 rounded-lg border border-solent-border/50' : 'text-zinc-200'}`}>
                     {msg.content}
                   </div>
                 </motion.div>
@@ -150,42 +150,42 @@ function Composer({
   onOpenPalette: () => void; chatMode: boolean; streaming?: boolean;
 }) {
   return (
-    <div className="relative z-10 p-4 md:p-8 bg-gradient-to-t from-nexus-bg via-nexus-bg to-transparent">
+    <div className="relative z-10 p-4 md:p-8 bg-gradient-to-t from-solent-bg via-solent-bg to-transparent">
       <div className="max-w-3xl mx-auto">
         <form
           onSubmit={onSubmit}
-          className="relative bg-nexus-surface/80 border border-nexus-border rounded-lg shadow-2xl backdrop-blur-xl group focus-within:border-nexus-mint/50 transition-colors"
+          className="relative bg-solent-surface/80 border border-solent-border rounded-lg shadow-2xl backdrop-blur-xl group focus-within:border-solent-mint/50 transition-colors"
         >
           <div className="flex items-center px-4 py-3">
-            <ChevronRight className="w-5 h-5 text-nexus-mint mr-2 shrink-0" />
+            <ChevronRight className="w-5 h-5 text-solent-mint mr-2 shrink-0" />
             <input
               type="text"
               value={value}
               onChange={(e) => onChange(e.target.value)}
               placeholder={chatMode ? 'Command CONDUCTOR, or press Space to dictate…' : 'Capture a thought or ask CONDUCTOR…'}
-              className="flex-1 bg-transparent border-none outline-none text-zinc-100 placeholder:text-nexus-dim font-sans text-sm md:text-base"
+              className="flex-1 bg-transparent border-none outline-none text-zinc-100 placeholder:text-solent-dim font-sans text-sm md:text-base"
             />
             <div className="flex items-center gap-2 shrink-0">
-              <button type="button" className="p-2 text-nexus-dim hover:text-nexus-mint transition-colors rounded-md hover:bg-nexus-border/50" aria-label="Voice">
+              <button type="button" className="p-2 text-solent-dim hover:text-solent-mint transition-colors rounded-md hover:bg-solent-border/50" aria-label="Voice">
                 <Mic className="w-4 h-4" />
               </button>
-              <button type="button" onClick={onOpenPalette} className="p-2 text-nexus-dim hover:text-nexus-text transition-colors rounded-md hover:bg-nexus-border/50" aria-label="Commands">
+              <button type="button" onClick={onOpenPalette} className="p-2 text-solent-dim hover:text-solent-text transition-colors rounded-md hover:bg-solent-border/50" aria-label="Commands">
                 <Hash className="w-4 h-4" />
               </button>
-              <button type="submit" disabled={!value.trim()} className="p-2 text-nexus-mint disabled:text-nexus-dim disabled:opacity-50 transition-colors rounded-md hover:bg-nexus-mint/10" aria-label="Send">
+              <button type="submit" disabled={!value.trim()} className="p-2 text-solent-mint disabled:text-solent-dim disabled:opacity-50 transition-colors rounded-md hover:bg-solent-mint/10" aria-label="Send">
                 <Send className="w-4 h-4" />
               </button>
             </div>
           </div>
-          <div className="px-4 py-2 border-t border-nexus-border/50 flex items-center justify-between text-[10px] font-mono text-nexus-dim bg-black/20 rounded-b-lg">
+          <div className="px-4 py-2 border-t border-solent-border/50 flex items-center justify-between text-[10px] font-mono text-solent-dim bg-black/20 rounded-b-lg">
             <div className="flex items-center gap-4">
-              <span><kbd className="bg-nexus-border px-1 rounded">⌘K</kbd> Palette</span>
-              <span><kbd className="bg-nexus-border px-1 rounded">Space</kbd> Voice</span>
-              <span><kbd className="bg-nexus-border px-1 rounded">/</kbd> Commands</span>
+              <span><kbd className="bg-solent-border px-1 rounded">⌘K</kbd> Palette</span>
+              <span><kbd className="bg-solent-border px-1 rounded">Space</kbd> Voice</span>
+              <span><kbd className="bg-solent-border px-1 rounded">/</kbd> Commands</span>
             </div>
-            <div className="flex items-center gap-2 text-nexus-mint/70">
+            <div className="flex items-center gap-2 text-solent-mint/70">
               <Terminal className="w-3 h-3" />
-              <span>{streaming ? 'CONDUCTOR thinking…' : 'NEXUS v0.2'}</span>
+              <span>{streaming ? 'CONDUCTOR thinking…' : 'SOLENT v0.2'}</span>
             </div>
           </div>
         </form>
@@ -201,9 +201,9 @@ const SOURCE_ICON: Record<string, React.ReactNode> = {
 };
 
 const SOURCE_TONE: Record<string, string> = {
-  pumble: 'text-nexus-purple bg-nexus-purple/10',
-  gmail: 'text-nexus-orange bg-nexus-orange/10',
-  zoho: 'text-nexus-blue bg-nexus-blue/10',
+  pumble: 'text-solent-purple bg-solent-purple/10',
+  gmail: 'text-solent-orange bg-solent-orange/10',
+  zoho: 'text-solent-blue bg-solent-blue/10',
 };
 
 function SourceChips({ brief, onOpenSources }: { brief: Brief | null; onOpenSources: () => void }) {
@@ -221,18 +221,18 @@ function SourceChips({ brief, onOpenSources }: { brief: Brief | null; onOpenSour
           title={s.error ?? (s.ok ? `${s.count} items` : s.configured ? 'configured, no data yet' : 'not connected')}
           className={`flex items-center gap-1 text-[9px] font-mono uppercase tracking-wider rounded-full border px-2 py-0.5 transition-colors ${
             s.ok
-              ? 'border-nexus-mint/40 text-nexus-mint'
+              ? 'border-solent-mint/40 text-solent-mint'
               : s.configured
-                ? 'border-nexus-orange/40 text-nexus-orange'
-                : 'border-nexus-border text-nexus-dim hover:text-nexus-text'
+                ? 'border-solent-orange/40 text-solent-orange'
+                : 'border-solent-border text-solent-dim hover:text-solent-text'
           }`}
         >
-          <i className={`w-1.5 h-1.5 rounded-full ${s.ok ? 'bg-nexus-mint' : s.configured ? 'bg-nexus-orange' : 'bg-nexus-border'}`} />
+          <i className={`w-1.5 h-1.5 rounded-full ${s.ok ? 'bg-solent-mint' : s.configured ? 'bg-solent-orange' : 'bg-solent-border'}`} />
           {s.source}
-          {s.ok && <span className="text-nexus-dim">·{s.count}</span>}
+          {s.ok && <span className="text-solent-dim">·{s.count}</span>}
         </button>
       ))}
-      <button onClick={onOpenSources} className="flex items-center gap-1 text-[9px] font-mono uppercase tracking-wider rounded-full border border-nexus-border px-2 py-0.5 text-nexus-dim hover:text-nexus-mint transition-colors">
+      <button onClick={onOpenSources} className="flex items-center gap-1 text-[9px] font-mono uppercase tracking-wider rounded-full border border-solent-border px-2 py-0.5 text-solent-dim hover:text-solent-mint transition-colors">
         <Plug className="w-2.5 h-2.5" /> sources
       </button>
     </div>
@@ -261,9 +261,9 @@ function Dashboard({
     <div className="w-full max-w-5xl mx-auto px-6 md:px-10 py-10">
       <div className="flex items-end justify-between gap-6 mb-4 flex-wrap">
         <div>
-          <p className="text-nexus-dim font-mono text-[10px] tracking-widest mb-2">{today}</p>
-          <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-nexus-text">{greeting}.</h1>
-          <p className="text-nexus-muted text-sm mt-2">
+          <p className="text-solent-dim font-mono text-[10px] tracking-widest mb-2">{today}</p>
+          <h1 className="text-3xl md:text-4xl font-semibold tracking-tight text-solent-text">{greeting}.</h1>
+          <p className="text-solent-muted text-sm mt-2">
             {brief?.headline
               ? <strong className="text-zinc-300 font-medium">{brief.headline}</strong>
               : <>Run the one-shot pass to pull Pumble + Gmail + Zoho and triage your day.</>}
@@ -272,61 +272,61 @@ function Dashboard({
         <button
           onClick={onRunBrief}
           disabled={briefRunning}
-          className="flex items-center gap-2 border border-nexus-border rounded-lg px-3 py-2 bg-nexus-mint/5 hover:border-nexus-mint/40 disabled:opacity-60 transition-colors"
+          className="flex items-center gap-2 border border-solent-border rounded-lg px-3 py-2 bg-solent-mint/5 hover:border-solent-mint/40 disabled:opacity-60 transition-colors"
         >
-          <span className="flex items-center gap-1.5 text-nexus-mint text-xs font-semibold">
+          <span className="flex items-center gap-1.5 text-solent-mint text-xs font-semibold">
             {briefRunning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
             {briefRunning ? 'Running one-shot pass…' : 'Run brief'}
           </span>
-          <small className="text-nexus-dim text-[10px]">
+          <small className="text-solent-dim text-[10px]">
             {brief ? `${brief.cached ? 'cached · ' : ''}${new Date(brief.generated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : '1 model call'}
           </small>
-          <ArrowRight className="w-4 h-4 text-nexus-mint" />
+          <ArrowRight className="w-4 h-4 text-solent-mint" />
         </button>
       </div>
 
       <div className="mb-6"><SourceChips brief={brief} onOpenSources={onOpenSources} /></div>
 
       {brief?.summary && (
-        <div className="mb-4 rounded-xl border border-nexus-mint/20 bg-nexus-mint/[.04] p-4 text-sm text-zinc-300 leading-relaxed">
-          <span className="block text-[9px] font-mono uppercase tracking-widest text-nexus-mint mb-1.5">Conductor · executive summary</span>
+        <div className="mb-4 rounded-xl border border-solent-mint/20 bg-solent-mint/[.04] p-4 text-sm text-zinc-300 leading-relaxed">
+          <span className="block text-[9px] font-mono uppercase tracking-widest text-solent-mint mb-1.5">Conductor · executive summary</span>
           {brief.summary}
-          {brief.error && <span className="block mt-2 text-[10px] text-nexus-orange font-mono">⚠ {brief.error}</span>}
+          {brief.error && <span className="block mt-2 text-[10px] text-solent-orange font-mono">⚠ {brief.error}</span>}
         </div>
       )}
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-px rounded-xl border border-nexus-border bg-nexus-border overflow-hidden mb-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-px rounded-xl border border-solent-border bg-solent-border overflow-hidden mb-4">
         <button onClick={() => setShowAttention((v) => !v)} className="text-left cursor-pointer" title="Click to see what needs you, with context">
-          <Metric icon={<AlertTriangle className="w-4 h-4" />} color={'nexus-orange' as const} value={`${needsYou}`} label="Needs you" tag={needsYou ? (showAttention ? 'hide ▴' : 'show ▾') : 'clear'} />
+          <Metric icon={<AlertTriangle className="w-4 h-4" />} color={'solent-orange' as const} value={`${needsYou}`} label="Needs you" tag={needsYou ? (showAttention ? 'hide ▴' : 'show ▾') : 'clear'} />
         </button>
-        <Metric icon={<Radio className="w-4 h-4" />} color={'nexus-purple' as const} value={`${inboxCount}`} label="Items in last pass" tag={brief ? 'scanned' : '—'} />
-        <Metric icon={<Clock3 className="w-4 h-4" />} color={'nexus-blue' as const} value={`${replyCount}`} label="Replies drafted" tag={replyCount ? 'awaiting you' : '—'} />
-        <Metric icon={<Gauge className="w-4 h-4" />} color={'nexus-mint' as const} value={`${connected}`} sub="/3" label="Sources connected" tag={connected ? 'online' : 'connect'} />
+        <Metric icon={<Radio className="w-4 h-4" />} color={'solent-purple' as const} value={`${inboxCount}`} label="Items in last pass" tag={brief ? 'scanned' : '—'} />
+        <Metric icon={<Clock3 className="w-4 h-4" />} color={'solent-blue' as const} value={`${replyCount}`} label="Replies drafted" tag={replyCount ? 'awaiting you' : '—'} />
+        <Metric icon={<Gauge className="w-4 h-4" />} color={'solent-mint' as const} value={`${connected}`} sub="/3" label="Sources connected" tag={connected ? 'online' : 'connect'} />
       </div>
 
       {/* Expanded attention queue — every flagged item, clickable for full context */}
       {showAttention && attentionItems.length > 0 && (
-        <section className="mb-4 rounded-xl border border-nexus-orange/25 bg-nexus-orange/[.03] overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-nexus-orange/20 flex items-center gap-2">
-            <AlertTriangle className="w-3.5 h-3.5 text-nexus-orange" />
+        <section className="mb-4 rounded-xl border border-solent-orange/25 bg-solent-orange/[.03] overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-solent-orange/20 flex items-center gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 text-solent-orange" />
             <h2 className="text-xs font-semibold text-zinc-200">Needs you — click any item for full context</h2>
           </div>
           {attentionItems.map((it, i) => (
             <button
               key={`${it.source}-${it.ref}-${i}`}
               onClick={() => onInspect(it)}
-              className="w-full flex items-start gap-3 px-4 py-2.5 border-b border-nexus-border/30 last:border-0 text-left hover:bg-white/[.03] transition-colors"
+              className="w-full flex items-start gap-3 px-4 py-2.5 border-b border-solent-border/30 last:border-0 text-left hover:bg-white/[.03] transition-colors"
             >
               <span className={`mt-0.5 w-5 h-5 rounded grid place-items-center shrink-0 text-[9px] ${SOURCE_TONE[it.source]}`}>{SOURCE_ICON[it.source]}</span>
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-2 flex-wrap">
                   <strong className="text-[11px] font-medium text-zinc-300">{it.from}</strong>
-                  {it.channel && <span className="px-1.5 py-0.5 rounded bg-nexus-border/60 text-[9px] font-mono text-nexus-dim">{it.channel}</span>}
-                  <span className="text-[9px] font-mono text-nexus-orange">{it.attentionReason}</span>
+                  {it.channel && <span className="px-1.5 py-0.5 rounded bg-solent-border/60 text-[9px] font-mono text-solent-dim">{it.channel}</span>}
+                  <span className="text-[9px] font-mono text-solent-orange">{it.attentionReason}</span>
                 </span>
-                <span className="block text-[10px] text-nexus-muted mt-0.5 line-clamp-1">{it.text}</span>
+                <span className="block text-[10px] text-solent-muted mt-0.5 line-clamp-1">{it.text}</span>
               </span>
-              <ChevronRight className="w-3.5 h-3.5 text-nexus-dim shrink-0 mt-1" />
+              <ChevronRight className="w-3.5 h-3.5 text-solent-dim shrink-0 mt-1" />
             </button>
           ))}
         </section>
@@ -336,18 +336,18 @@ function Dashboard({
       <div className="mb-4"><OpenLoops refreshKey={brief?.generated_at ?? 0} onDraft={onSend} /></div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <section className="lg:col-span-2 rounded-xl border border-nexus-border bg-nexus-surface/90 overflow-hidden">
-          <div className="flex items-center justify-between p-4 border-b border-nexus-border/50">
+        <section className="lg:col-span-2 rounded-xl border border-solent-border bg-solent-surface/90 overflow-hidden">
+          <div className="flex items-center justify-between p-4 border-b border-solent-border/50">
             <div>
-              <span className="flex items-center gap-1.5 text-nexus-dim font-mono text-[10px] tracking-widest"><Target className="w-3.5 h-3.5" /> TODAY</span>
-              <h2 className="text-nexus-text text-sm font-semibold mt-1">Priority queue</h2>
+              <span className="flex items-center gap-1.5 text-solent-dim font-mono text-[10px] tracking-widest"><Target className="w-3.5 h-3.5" /> TODAY</span>
+              <h2 className="text-solent-text text-sm font-semibold mt-1">Priority queue</h2>
             </div>
-            <button className="flex items-center gap-1 text-[10px] text-nexus-dim border border-nexus-border rounded px-2 py-1 hover:text-nexus-text transition-colors"><Plus className="w-3.5 h-3.5" /> Add</button>
+            <button className="flex items-center gap-1 text-[10px] text-solent-dim border border-solent-border rounded px-2 py-1 hover:text-solent-text transition-colors"><Plus className="w-3.5 h-3.5" /> Add</button>
           </div>
           <div>
             {tasks.length === 0 && (
               <div className="px-4 py-8 text-center">
-                <p className="text-nexus-dim text-xs">No priorities yet. Run the brief — real tasks land here from your sources.</p>
+                <p className="text-solent-dim text-xs">No priorities yet. Run the brief — real tasks land here from your sources.</p>
               </div>
             )}
             {tasks.map((task) => (
@@ -355,74 +355,74 @@ function Dashboard({
                 layout
                 key={task.id}
                 onClick={() => onToggleTask(task.id)}
-                className={`w-full flex items-center gap-3 px-4 py-3.5 border-b border-nexus-border/40 text-left hover:bg-white/[.02] transition-colors ${task.done ? 'opacity-50' : ''}`}
+                className={`w-full flex items-center gap-3 px-4 py-3.5 border-b border-solent-border/40 text-left hover:bg-white/[.02] transition-colors ${task.done ? 'opacity-50' : ''}`}
               >
-                <span className={`w-5 h-5 grid place-items-center rounded border ${task.done ? 'border-nexus-mint bg-nexus-mint/10 text-nexus-mint' : 'border-nexus-border text-transparent'}`}>
+                <span className={`w-5 h-5 grid place-items-center rounded border ${task.done ? 'border-solent-mint bg-solent-mint/10 text-solent-mint' : 'border-solent-border text-transparent'}`}>
                   {task.done ? <Check className="w-3 h-3" /> : <Circle className="w-4 h-4" />}
                 </span>
                 <span className="flex-1 min-w-0">
-                  <span className={`block text-xs font-medium truncate ${task.done ? 'line-through text-nexus-muted' : 'text-zinc-300'}`}>{task.title}</span>
-                  <span className="block text-[10px] text-nexus-dim mt-0.5">{task.context}</span>
+                  <span className={`block text-xs font-medium truncate ${task.done ? 'line-through text-solent-muted' : 'text-zinc-300'}`}>{task.title}</span>
+                  <span className="block text-[10px] text-solent-dim mt-0.5">{task.context}</span>
                 </span>
-                <time className="text-[10px] font-mono text-nexus-dim">{task.time}</time>
-                <ChevronRight className="w-4 h-4 text-nexus-border" />
+                <time className="text-[10px] font-mono text-solent-dim">{task.time}</time>
+                <ChevronRight className="w-4 h-4 text-solent-border" />
               </motion.button>
             ))}
           </div>
-          <div className="h-10 flex items-center justify-between px-4 text-[10px] text-nexus-dim">
+          <div className="h-10 flex items-center justify-between px-4 text-[10px] text-solent-dim">
             <span className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5" /> {completed} of {tasks.length} completed</span>
-            <button onClick={onToggleContext} className="hover:text-nexus-mint transition-colors flex items-center gap-1">View timeline <ArrowRight className="w-3 h-3" /></button>
+            <button onClick={onToggleContext} className="hover:text-solent-mint transition-colors flex items-center gap-1">View timeline <ArrowRight className="w-3 h-3" /></button>
           </div>
         </section>
 
         <div className="flex flex-col gap-4">
-          <section className="rounded-xl border border-nexus-border bg-nexus-surface/90 overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-nexus-border/50">
+          <section className="rounded-xl border border-solent-border bg-solent-surface/90 overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-solent-border/50">
               <div>
-                <span className="flex items-center gap-1.5 text-nexus-dim font-mono text-[10px] tracking-widest"><Activity className="w-3.5 h-3.5" /> LIVE</span>
-                <h2 className="text-nexus-text text-sm font-semibold mt-1">Agent activity</h2>
+                <span className="flex items-center gap-1.5 text-solent-dim font-mono text-[10px] tracking-widest"><Activity className="w-3.5 h-3.5" /> LIVE</span>
+                <h2 className="text-solent-text text-sm font-semibold mt-1">Agent activity</h2>
               </div>
-              <span className="flex items-center gap-1 text-[9px] font-mono text-nexus-mint border border-nexus-mint/20 rounded-full px-1.5 py-0.5"><i className="w-1 h-1 rounded-full bg-nexus-mint animate-pulse" /> {brief?.sources?.filter((s) => s.ok).length ?? 0} online</span>
+              <span className="flex items-center gap-1 text-[9px] font-mono text-solent-mint border border-solent-mint/20 rounded-full px-1.5 py-0.5"><i className="w-1 h-1 rounded-full bg-solent-mint animate-pulse" /> {brief?.sources?.filter((s) => s.ok).length ?? 0} online</span>
             </div>
             <div className="p-2 space-y-1">
               {(brief?.sources ?? []).filter((s) => s.configured).length === 0 && (
-                <p className="px-2 py-3 text-[10px] text-nexus-dim text-center">No sources connected — activity appears here once they are.</p>
+                <p className="px-2 py-3 text-[10px] text-solent-dim text-center">No sources connected — activity appears here once they are.</p>
               )}
               {(brief?.sources ?? []).filter((s) => s.configured).map((s, i) => (
                 <button key={s.source} onClick={onToggleContext} className="w-full flex items-center gap-2 px-2 py-2 rounded hover:bg-white/[.02] text-left">
                   <span className="w-7 h-7 rounded grid place-items-center font-mono text-[9px]" style={{ backgroundColor: `${['#38bdf8', '#fb923c', '#a78bfa'][i % 3]}1a`, color: ['#38bdf8', '#fb923c', '#a78bfa'][i % 3] }}>0{i + 1}</span>
                   <span className="min-w-0">
                     <strong className="block text-[10px] font-mono text-zinc-300 truncate uppercase">{s.source}</strong>
-                    <small className="block text-[9px] text-nexus-dim truncate">{s.ok ? `${s.count} items in last pass` : s.error ?? 'no data yet'}</small>
+                    <small className="block text-[9px] text-solent-dim truncate">{s.ok ? `${s.count} items in last pass` : s.error ?? 'no data yet'}</small>
                   </span>
                 </button>
               ))}
             </div>
-            <button onClick={onOpenPalette} className="w-[calc(100%-28px)] mx-3.5 mb-3 h-8 flex items-center justify-center gap-1.5 text-[10px] text-nexus-dim border border-nexus-border rounded hover:text-nexus-mint transition-colors"><Users className="w-3.5 h-3.5" /> Ask the council</button>
+            <button onClick={onOpenPalette} className="w-[calc(100%-28px)] mx-3.5 mb-3 h-8 flex items-center justify-center gap-1.5 text-[10px] text-solent-dim border border-solent-border rounded hover:text-solent-mint transition-colors"><Users className="w-3.5 h-3.5" /> Ask the council</button>
           </section>
 
-          <section className="rounded-xl border border-nexus-border bg-nexus-surface/90 overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-nexus-border/50">
+          <section className="rounded-xl border border-solent-border bg-solent-surface/90 overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b border-solent-border/50">
               <div>
-                <span className="flex items-center gap-1.5 text-nexus-dim font-mono text-[10px] tracking-widest"><TrendingUp className="w-3.5 h-3.5" /> SIGNAL RADAR</span>
-                <h2 className="text-nexus-text text-sm font-semibold mt-1">What changed</h2>
+                <span className="flex items-center gap-1.5 text-solent-dim font-mono text-[10px] tracking-widest"><TrendingUp className="w-3.5 h-3.5" /> SIGNAL RADAR</span>
+                <h2 className="text-solent-text text-sm font-semibold mt-1">What changed</h2>
               </div>
             </div>
             <div>
               {signals.length === 0 && (
-                <p className="px-4 py-6 text-[10px] text-nexus-dim text-center">Signals distilled from your sources appear here after a pass.</p>
+                <p className="px-4 py-6 text-[10px] text-solent-dim text-center">Signals distilled from your sources appear here after a pass.</p>
               )}
               {signals.map((s, i) => (
-                <button key={s.title} className="w-full flex items-center gap-3 px-4 py-3 border-b border-nexus-border/40 text-left hover:bg-white/[.02] last:border-0">
-                  <span className={`w-7 h-7 rounded grid place-items-center font-mono text-[9px] ${['text-nexus-blue bg-nexus-blue/10', 'text-nexus-orange bg-nexus-orange/10', 'text-nexus-purple bg-nexus-purple/10', 'text-nexus-mint bg-nexus-mint/10'][i % 4]}`}>0{i + 1}</span>
+                <button key={s.title} className="w-full flex items-center gap-3 px-4 py-3 border-b border-solent-border/40 text-left hover:bg-white/[.02] last:border-0">
+                  <span className={`w-7 h-7 rounded grid place-items-center font-mono text-[9px] ${['text-solent-blue bg-solent-blue/10', 'text-solent-orange bg-solent-orange/10', 'text-solent-purple bg-solent-purple/10', 'text-solent-mint bg-solent-mint/10'][i % 4]}`}>0{i + 1}</span>
                   <span className="flex-1 min-w-0">
-                    <small className="block text-[9px] font-mono uppercase tracking-wider text-nexus-dim">{s.label}</small>
+                    <small className="block text-[9px] font-mono uppercase tracking-wider text-solent-dim">{s.label}</small>
                     <strong className="block text-[11px] font-medium text-zinc-300 truncate">{s.title}</strong>
-                    <em className="block text-[9px] font-mono text-nexus-dim not-italic">{s.meta}</em>
+                    <em className="block text-[9px] font-mono text-solent-dim not-italic">{s.meta}</em>
                   </span>
                   <span className="text-right">
-                    <small className="block text-[8px] font-mono text-nexus-dim uppercase">conf</small>
-                    <strong className="block text-[10px] font-mono text-nexus-muted">{s.score}</strong>
+                    <small className="block text-[8px] font-mono text-solent-dim uppercase">conf</small>
+                    <strong className="block text-[10px] font-mono text-solent-muted">{s.score}</strong>
                   </span>
                 </button>
               ))}
@@ -431,24 +431,24 @@ function Dashboard({
         </div>
       </div>
 
-      <section className="mt-4 rounded-xl border border-nexus-border bg-nexus-surface/90 overflow-hidden">
-        <div className="flex items-center justify-between p-4 border-b border-nexus-border/50">
+      <section className="mt-4 rounded-xl border border-solent-border bg-solent-surface/90 overflow-hidden">
+        <div className="flex items-center justify-between p-4 border-b border-solent-border/50">
           <div>
-            <span className="flex items-center gap-1.5 text-nexus-dim font-mono text-[10px] tracking-widest"><PenLine className="w-3.5 h-3.5" /> DRAFTS</span>
-            <h2 className="text-nexus-text text-sm font-semibold mt-1">Replies awaiting your call</h2>
+            <span className="flex items-center gap-1.5 text-solent-dim font-mono text-[10px] tracking-widest"><PenLine className="w-3.5 h-3.5" /> DRAFTS</span>
+            <h2 className="text-solent-text text-sm font-semibold mt-1">Replies awaiting your call</h2>
           </div>
-          <span className="text-[10px] font-mono text-nexus-dim">{replyCount || '—'}</span>
+          <span className="text-[10px] font-mono text-solent-dim">{replyCount || '—'}</span>
         </div>
         <div className="p-4">
           {replyCount === 0 && (
-            <p className="text-[10px] text-nexus-dim text-center py-2">When a pass finds messages waiting on you, HERMES drafts replies here and in RECEIVE.</p>
+            <p className="text-[10px] text-solent-dim text-center py-2">When a pass finds messages waiting on you, HERMES drafts replies here and in RECEIVE.</p>
           )}
           {(brief?.replies ?? []).map((r, i) => (
-            <div key={i} className="flex items-start gap-4 py-2.5 border-b border-nexus-border/30 last:border-0">
-              <span className={`mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-mono ${SOURCE_TONE[r.channel] ?? 'bg-nexus-border text-nexus-dim'}`}>{r.channel}</span>
+            <div key={i} className="flex items-start gap-4 py-2.5 border-b border-solent-border/30 last:border-0">
+              <span className={`mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-mono ${SOURCE_TONE[r.channel] ?? 'bg-solent-border text-solent-dim'}`}>{r.channel}</span>
               <div className="min-w-0">
                 <strong className="block text-[11px] font-medium text-zinc-300">to {r.to} · re: {r.re}</strong>
-                <small className="block text-[10px] text-nexus-dim truncate">{r.draft}</small>
+                <small className="block text-[10px] text-solent-dim truncate">{r.draft}</small>
               </div>
             </div>
           ))}
@@ -458,21 +458,21 @@ function Dashboard({
   );
 }
 
-function Metric({ icon, color, value, sub, label, tag }: { icon: React.ReactNode; color: 'nexus-orange' | 'nexus-blue' | 'nexus-purple' | 'nexus-mint'; value: string; sub?: string; label: string; tag: string }) {
+function Metric({ icon, color, value, sub, label, tag }: { icon: React.ReactNode; color: 'solent-orange' | 'solent-blue' | 'solent-purple' | 'solent-mint'; value: string; sub?: string; label: string; tag: string }) {
   const tones: Record<typeof color, string> = {
-    'nexus-orange': 'bg-nexus-orange/10 text-nexus-orange',
-    'nexus-blue': 'bg-nexus-blue/10 text-nexus-blue',
-    'nexus-purple': 'bg-nexus-purple/10 text-nexus-purple',
-    'nexus-mint': 'bg-nexus-mint/10 text-nexus-mint',
+    'solent-orange': 'bg-solent-orange/10 text-solent-orange',
+    'solent-blue': 'bg-solent-blue/10 text-solent-blue',
+    'solent-purple': 'bg-solent-purple/10 text-solent-purple',
+    'solent-mint': 'bg-solent-mint/10 text-solent-mint',
   };
   return (
-    <div className="bg-nexus-surface/80 p-3.5 flex items-center gap-3 relative">
+    <div className="bg-solent-surface/80 p-3.5 flex items-center gap-3 relative">
       <span className={`w-8 h-8 rounded grid place-items-center ${tones[color]}`}>{icon}</span>
       <div className="min-w-0">
-        <strong className="text-nexus-text font-mono text-lg">{value}{sub && <span className="text-nexus-dim text-xs">{sub}</span>}</strong>
-        <span className="block text-[10px] text-nexus-dim truncate">{label}</span>
+        <strong className="text-solent-text font-mono text-lg">{value}{sub && <span className="text-solent-dim text-xs">{sub}</span>}</strong>
+        <span className="block text-[10px] text-solent-dim truncate">{label}</span>
       </div>
-      <em className="absolute right-2.5 top-2.5 not-italic text-[8px] font-mono text-nexus-faint uppercase">{tag}</em>
+      <em className="absolute right-2.5 top-2.5 not-italic text-[8px] font-mono text-solent-faint uppercase">{tag}</em>
     </div>
   );
 }
@@ -494,14 +494,14 @@ function ReceiveView({
     <div className="w-full max-w-4xl mx-auto px-6 md:px-10 py-10 pb-40">
       <div className="flex items-end justify-between gap-4 mb-4 flex-wrap">
         <div>
-          <p className="text-nexus-dim font-mono text-[10px] tracking-widest mb-2 flex items-center gap-1.5"><Inbox className="w-3.5 h-3.5" /> UNIFIED INBOX</p>
-          <h1 className="text-2xl font-semibold tracking-tight text-nexus-text">Everything, one pass.</h1>
-          <p className="text-nexus-muted text-sm mt-1">Pumble + Gmail + Zoho pulled together, triaged in a single model call.</p>
+          <p className="text-solent-dim font-mono text-[10px] tracking-widest mb-2 flex items-center gap-1.5"><Inbox className="w-3.5 h-3.5" /> UNIFIED INBOX</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-solent-text">Everything, one pass.</h1>
+          <p className="text-solent-muted text-sm mt-1">Pumble + Gmail + Zoho pulled together, triaged in a single model call.</p>
         </div>
         <button
           onClick={onRunBrief}
           disabled={briefRunning}
-          className="flex items-center gap-2 px-3 h-8 rounded-md border border-nexus-mint/40 text-nexus-mint text-xs font-semibold hover:bg-nexus-mint/10 disabled:opacity-60 transition-colors"
+          className="flex items-center gap-2 px-3 h-8 rounded-md border border-solent-mint/40 text-solent-mint text-xs font-semibold hover:bg-solent-mint/10 disabled:opacity-60 transition-colors"
         >
           {briefRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
           {briefRunning ? 'Pulling sources…' : 'Pull & triage now'}
@@ -511,22 +511,22 @@ function ReceiveView({
       <div className="mb-5"><SourceChips brief={brief} onOpenSources={onOpenSources} /></div>
 
       {brief && brief.replies.length > 0 && (
-        <section className="mb-5 rounded-xl border border-nexus-purple/25 bg-nexus-purple/[.04] overflow-hidden">
-          <div className="px-4 py-3 border-b border-nexus-purple/20 flex items-center gap-2">
-            <PenLine className="w-3.5 h-3.5 text-nexus-purple" />
+        <section className="mb-5 rounded-xl border border-solent-purple/25 bg-solent-purple/[.04] overflow-hidden">
+          <div className="px-4 py-3 border-b border-solent-purple/20 flex items-center gap-2">
+            <PenLine className="w-3.5 h-3.5 text-solent-purple" />
             <h2 className="text-xs font-semibold text-zinc-200">HERMES · drafted replies awaiting your call</h2>
           </div>
           {brief.replies.map((r, i) => (
-            <div key={i} className="px-4 py-3 border-b border-nexus-border/30 last:border-0">
-              <div className="flex items-center gap-2 text-[10px] font-mono text-nexus-dim mb-1.5">
-                <span className={`px-1.5 py-0.5 rounded ${SOURCE_TONE[r.channel] ?? 'bg-nexus-border text-nexus-dim'}`}>{r.channel}</span>
+            <div key={i} className="px-4 py-3 border-b border-solent-border/30 last:border-0">
+              <div className="flex items-center gap-2 text-[10px] font-mono text-solent-dim mb-1.5">
+                <span className={`px-1.5 py-0.5 rounded ${SOURCE_TONE[r.channel] ?? 'bg-solent-border text-solent-dim'}`}>{r.channel}</span>
                 <span className="text-zinc-400">to {r.to}</span>
                 <span className="truncate">· re: {r.re}</span>
               </div>
               <p className="text-xs text-zinc-300 leading-relaxed mb-2">{r.draft}</p>
               <button
                 onClick={() => onSend(`Refine and finalise this ${r.channel} reply to ${r.to} (re: ${r.re}): "${r.draft}"`)}
-                className="text-[10px] font-mono text-nexus-purple hover:text-nexus-mint transition-colors"
+                className="text-[10px] font-mono text-solent-purple hover:text-solent-mint transition-colors"
               >
                 Refine with CONDUCTOR →
               </button>
@@ -541,19 +541,19 @@ function ReceiveView({
             key={f}
             onClick={() => setFilter(f)}
             className={`px-2.5 py-1 rounded text-[10px] font-mono uppercase tracking-wider transition-colors ${
-              filter === f ? 'bg-nexus-mint/10 text-nexus-mint' : 'text-nexus-dim hover:text-nexus-text'
+              filter === f ? 'bg-solent-mint/10 text-solent-mint' : 'text-solent-dim hover:text-solent-text'
             }`}
           >
             {f === 'attention' ? `needs you${attnCount ? ` ${attnCount}` : ''}` : f}
           </button>
         ))}
-        <span className="ml-auto text-[10px] font-mono text-nexus-dim">{inbox.length} items</span>
+        <span className="ml-auto text-[10px] font-mono text-solent-dim">{inbox.length} items</span>
       </div>
 
-      <section className="rounded-xl border border-nexus-border bg-nexus-surface/90 overflow-hidden">
+      <section className="rounded-xl border border-solent-border bg-solent-surface/90 overflow-hidden">
         {inbox.length === 0 && (
           <div className="p-10 text-center">
-            <p className="text-nexus-muted text-sm mb-3">
+            <p className="text-solent-muted text-sm mb-3">
               {!brief
                 ? 'Loading state from the Worker…'
                 : !anyConfigured
@@ -561,11 +561,11 @@ function ReceiveView({
                   : 'Nothing pulled yet for this window. Run the pass to fetch fresh items.'}
             </p>
             {brief && !anyConfigured ? (
-              <button onClick={onOpenSources} className="inline-flex items-center gap-1.5 px-3 h-8 rounded-md bg-nexus-mint text-nexus-bg text-xs font-semibold hover:opacity-90 transition-opacity">
+              <button onClick={onOpenSources} className="inline-flex items-center gap-1.5 px-3 h-8 rounded-md bg-solent-mint text-solent-bg text-xs font-semibold hover:opacity-90 transition-opacity">
                 <Plug className="w-3.5 h-3.5" /> Connect sources
               </button>
             ) : brief ? (
-              <button onClick={onRunBrief} disabled={briefRunning} className="inline-flex items-center gap-1.5 px-3 h-8 rounded-md border border-nexus-mint/40 text-nexus-mint text-xs font-semibold hover:bg-nexus-mint/10 disabled:opacity-60 transition-colors">
+              <button onClick={onRunBrief} disabled={briefRunning} className="inline-flex items-center gap-1.5 px-3 h-8 rounded-md border border-solent-mint/40 text-solent-mint text-xs font-semibold hover:bg-solent-mint/10 disabled:opacity-60 transition-colors">
                 <RefreshCw className="w-3.5 h-3.5" /> Pull now
               </button>
             ) : null}
@@ -578,26 +578,26 @@ function ReceiveView({
             role="button"
             tabIndex={0}
             onKeyDown={(e) => { if (e.key === 'Enter') onInspect(item); }}
-            className={`flex items-start gap-3 px-4 py-3 border-b border-nexus-border/40 last:border-0 hover:bg-white/[.03] transition-colors cursor-pointer ${item.needsAttention ? 'bg-nexus-orange/[.03] border-l-2 border-l-nexus-orange/60' : ''}`}
+            className={`flex items-start gap-3 px-4 py-3 border-b border-solent-border/40 last:border-0 hover:bg-white/[.03] transition-colors cursor-pointer ${item.needsAttention ? 'bg-solent-orange/[.03] border-l-2 border-l-solent-orange/60' : ''}`}
             title="Click for full context"
           >
             <span className={`mt-0.5 w-6 h-6 rounded grid place-items-center shrink-0 ${SOURCE_TONE[item.source]}`}>{SOURCE_ICON[item.source]}</span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <strong className="text-[11px] font-medium text-zinc-300 truncate">{item.from}</strong>
-                {item.channel && <span className="px-1.5 py-0.5 rounded bg-nexus-border/60 text-[9px] font-mono text-nexus-dim">{item.channel}</span>}
-                {item.mentionsMe ? <span className="flex items-center gap-0.5 text-[9px] font-mono text-nexus-blue"><AtSign className="w-2.5 h-2.5" />you</span> : null}
+                {item.channel && <span className="px-1.5 py-0.5 rounded bg-solent-border/60 text-[9px] font-mono text-solent-dim">{item.channel}</span>}
+                {item.mentionsMe ? <span className="flex items-center gap-0.5 text-[9px] font-mono text-solent-blue"><AtSign className="w-2.5 h-2.5" />you</span> : null}
                 {item.needsAttention ? (
-                  <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-nexus-orange/10 text-[9px] font-mono text-nexus-orange">
+                  <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-solent-orange/10 text-[9px] font-mono text-solent-orange">
                     <AlertTriangle className="w-2.5 h-2.5" />{item.attentionReason ?? 'needs you'}
                   </span>
                 ) : null}
               </div>
-              <p className="text-[11px] text-nexus-muted leading-relaxed mt-0.5 line-clamp-2">{item.text}</p>
+              <p className="text-[11px] text-solent-muted leading-relaxed mt-0.5 line-clamp-2">{item.text}</p>
             </div>
             <button
               onClick={(e) => { e.stopPropagation(); onSend(`Draft a reply to this ${item.source} message from ${item.from} (${item.title}): "${item.text}"`); }}
-              className="shrink-0 text-[9px] font-mono text-nexus-dim hover:text-nexus-mint transition-colors mt-0.5"
+              className="shrink-0 text-[9px] font-mono text-solent-dim hover:text-solent-mint transition-colors mt-0.5"
               title="Draft a reply with CONDUCTOR"
             >
               reply →
@@ -613,19 +613,19 @@ function FocusView({ focusTime, running, onToggle, onReset, target }: { focusTim
   return (
     <div className="min-h-full flex flex-col items-center justify-center relative p-10 text-center overflow-hidden">
       <div className="absolute inset-[15%_10%] bg-[radial-gradient(circle,rgba(124,245,165,.09),transparent_58%)] pointer-events-none" />
-      <div className="w-20 h-20 relative mb-6 border border-nexus-mint/20 rounded-full animate-[spin_18s_linear_infinite]">
-        <div className="absolute inset-3 border border-nexus-mint/10 rounded-full" />
-        <div className="absolute inset-7 bg-nexus-mint/10 rounded-full shadow-[0_0_28px_rgba(124,245,165,.18)]" />
+      <div className="w-20 h-20 relative mb-6 border border-solent-mint/20 rounded-full animate-[spin_18s_linear_infinite]">
+        <div className="absolute inset-3 border border-solent-mint/10 rounded-full" />
+        <div className="absolute inset-7 bg-solent-mint/10 rounded-full shadow-[0_0_28px_rgba(124,245,165,.18)]" />
       </div>
-      <p className="text-nexus-mint/70 font-mono text-[10px] tracking-widest uppercase mb-3">Focus protocol</p>
-      <h1 className="text-4xl md:text-5xl font-semibold tracking-tight text-nexus-text">One thing, done well.</h1>
-      <p className="text-nexus-muted text-sm mt-3">{target ?? 'No open priority — run the brief to load one.'}</p>
-      <div className="my-9 text-nexus-text font-mono text-6xl md:text-7xl tracking-tighter">{focusTime}</div>
+      <p className="text-solent-mint/70 font-mono text-[10px] tracking-widest uppercase mb-3">Focus protocol</p>
+      <h1 className="text-4xl md:text-5xl font-semibold tracking-tight text-solent-text">One thing, done well.</h1>
+      <p className="text-solent-muted text-sm mt-3">{target ?? 'No open priority — run the brief to load one.'}</p>
+      <div className="my-9 text-solent-text font-mono text-6xl md:text-7xl tracking-tighter">{focusTime}</div>
       <div className="flex gap-2">
-        <button onClick={onToggle} className="px-4 h-9 rounded-md border border-nexus-mint bg-nexus-mint text-nexus-bg text-xs font-semibold hover:opacity-90 transition-opacity">
+        <button onClick={onToggle} className="px-4 h-9 rounded-md border border-solent-mint bg-solent-mint text-solent-bg text-xs font-semibold hover:opacity-90 transition-opacity">
           {running ? 'Pause session' : 'Resume session'}
         </button>
-        <button onClick={onReset} className="px-4 h-9 rounded-md border border-nexus-border bg-nexus-surface text-nexus-muted text-xs hover:text-nexus-text transition-colors">
+        <button onClick={onReset} className="px-4 h-9 rounded-md border border-solent-border bg-solent-surface text-solent-muted text-xs hover:text-solent-text transition-colors">
           Reset
         </button>
       </div>
@@ -639,26 +639,26 @@ function PerformanceView({ completed, tasks }: { completed: number; tasks: Task[
   const open = total - completed;
   return (
     <div className="w-full max-w-3xl mx-auto px-6 md:px-10 py-12">
-      <h1 className="text-2xl font-semibold text-nexus-text mb-1">Performance</h1>
-      <p className="text-nexus-muted text-sm mb-8">Execution telemetry for today.</p>
+      <h1 className="text-2xl font-semibold text-solent-text mb-1">Performance</h1>
+      <p className="text-solent-muted text-sm mb-8">Execution telemetry for today.</p>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="rounded-xl border border-nexus-border bg-nexus-surface/90 p-5">
-          <span className="text-[10px] font-mono text-nexus-dim uppercase tracking-widest">Priority completion</span>
-          <div className="text-3xl font-mono text-nexus-mint mt-2">{total ? `${pct}%` : '—'}</div>
-          <div className="h-1.5 mt-3 rounded-full bg-nexus-border overflow-hidden"><span className="block h-full bg-nexus-mint" style={{ width: `${pct}%` }} /></div>
+        <div className="rounded-xl border border-solent-border bg-solent-surface/90 p-5">
+          <span className="text-[10px] font-mono text-solent-dim uppercase tracking-widest">Priority completion</span>
+          <div className="text-3xl font-mono text-solent-mint mt-2">{total ? `${pct}%` : '—'}</div>
+          <div className="h-1.5 mt-3 rounded-full bg-solent-border overflow-hidden"><span className="block h-full bg-solent-mint" style={{ width: `${pct}%` }} /></div>
         </div>
-        <div className="rounded-xl border border-nexus-border bg-nexus-surface/90 p-5">
-          <span className="text-[10px] font-mono text-nexus-dim uppercase tracking-widest">Completed</span>
-          <div className="text-3xl font-mono text-nexus-blue mt-2">{completed}</div>
-          <span className="text-[10px] text-nexus-dim">of {total || '—'} priorities</span>
+        <div className="rounded-xl border border-solent-border bg-solent-surface/90 p-5">
+          <span className="text-[10px] font-mono text-solent-dim uppercase tracking-widest">Completed</span>
+          <div className="text-3xl font-mono text-solent-blue mt-2">{completed}</div>
+          <span className="text-[10px] text-solent-dim">of {total || '—'} priorities</span>
         </div>
-        <div className="rounded-xl border border-nexus-border bg-nexus-surface/90 p-5">
-          <span className="text-[10px] font-mono text-nexus-dim uppercase tracking-widest">Still open</span>
-          <div className="text-3xl font-mono text-nexus-purple mt-2">{open}</div>
-          <span className="text-[10px] text-nexus-dim">{open ? 'needs attention' : 'all clear'}</span>
+        <div className="rounded-xl border border-solent-border bg-solent-surface/90 p-5">
+          <span className="text-[10px] font-mono text-solent-dim uppercase tracking-widest">Still open</span>
+          <div className="text-3xl font-mono text-solent-purple mt-2">{open}</div>
+          <span className="text-[10px] text-solent-dim">{open ? 'needs attention' : 'all clear'}</span>
         </div>
       </div>
-      {total === 0 && <p className="text-nexus-dim text-xs mt-6">Nothing tracked yet — run the one-shot brief to populate priorities from your sources.</p>}
+      {total === 0 && <p className="text-solent-dim text-xs mt-6">Nothing tracked yet — run the one-shot brief to populate priorities from your sources.</p>}
     </div>
   );
 }

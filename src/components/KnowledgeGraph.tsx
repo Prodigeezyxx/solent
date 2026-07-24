@@ -4,7 +4,7 @@ import { fetchGraph, type GraphData, type GraphNode, type GraphNodeType } from '
 
 /**
  * Knowledge graph panel — force-directed relationship tree over everything
- * NEXUS knows: sources → people → messages → derived priorities, signals,
+ * SOLENT knows: sources → people → messages → derived priorities, signals,
  * drafts, memories and decisions. Pure client-side physics, zero credits.
  */
 
@@ -202,12 +202,12 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
     <div className="h-full flex flex-col relative">
       <div className="flex items-center justify-between gap-3 px-6 pt-6 pb-3 flex-wrap">
         <div>
-          <p className="text-nexus-dim font-mono text-[10px] tracking-widest mb-1 flex items-center gap-1.5"><GitBranch className="w-3.5 h-3.5" /> KNOWLEDGE GRAPH</p>
-          <h1 className="text-xl font-semibold tracking-tight text-nexus-text">How everything connects.</h1>
+          <p className="text-solent-dim font-mono text-[10px] tracking-widest mb-1 flex items-center gap-1.5"><GitBranch className="w-3.5 h-3.5" /> KNOWLEDGE GRAPH</p>
+          <h1 className="text-xl font-semibold tracking-tight text-solent-text">How everything connects.</h1>
         </div>
         <button
           onClick={load}
-          className="flex items-center gap-1.5 px-3 h-8 rounded-md border border-nexus-border text-nexus-dim text-xs hover:text-nexus-mint hover:border-nexus-mint/40 transition-colors"
+          className="flex items-center gap-1.5 px-3 h-8 rounded-md border border-solent-border text-solent-dim text-xs hover:text-solent-mint hover:border-solent-mint/40 transition-colors"
         >
           <RefreshCw className="w-3.5 h-3.5" /> Rebuild graph
         </button>
@@ -219,32 +219,32 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
           <button
             key={t}
             onClick={() => toggleType(t)}
-            className={`flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-wider rounded-full border px-2 py-0.5 transition-opacity ${hiddenTypes.has(t) ? 'opacity-35 border-nexus-border text-nexus-dim' : 'border-nexus-border text-zinc-300'}`}
+            className={`flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-wider rounded-full border px-2 py-0.5 transition-opacity ${hiddenTypes.has(t) ? 'opacity-35 border-solent-border text-solent-dim' : 'border-solent-border text-zinc-300'}`}
           >
             <i className="w-2 h-2 rounded-full" style={{ backgroundColor: TYPE_STYLE[t].color }} />
             {TYPE_STYLE[t].label}
-            <span className="text-nexus-dim">{typeCounts.get(t)}</span>
+            <span className="text-solent-dim">{typeCounts.get(t)}</span>
           </button>
         ))}
       </div>
 
-      <div className="flex-1 min-h-0 mx-6 mb-6 rounded-xl border border-nexus-border bg-nexus-surface/60 relative overflow-hidden">
+      <div className="flex-1 min-h-0 mx-6 mb-6 rounded-xl border border-solent-border bg-solent-surface/60 relative overflow-hidden">
         {loading && (
           <div className="absolute inset-0 grid place-items-center z-10">
-            <Loader2 className="w-6 h-6 text-nexus-mint animate-spin" />
+            <Loader2 className="w-6 h-6 text-solent-mint animate-spin" />
           </div>
         )}
 
         {!loading && (!graph || graph.empty) && (
           <div className="absolute inset-0 grid place-items-center z-10 p-8">
             <div className="text-center max-w-sm">
-              <GitBranch className="w-8 h-8 text-nexus-dim mx-auto mb-3" />
-              <p className="text-nexus-muted text-sm mb-1">The graph is empty.</p>
-              <p className="text-nexus-dim text-xs mb-4">Run the one-shot brief — sources, people, messages, priorities, and signals will appear here as a living relationship tree.</p>
+              <GitBranch className="w-8 h-8 text-solent-dim mx-auto mb-3" />
+              <p className="text-solent-muted text-sm mb-1">The graph is empty.</p>
+              <p className="text-solent-dim text-xs mb-4">Run the one-shot brief — sources, people, messages, priorities, and signals will appear here as a living relationship tree.</p>
               <button
                 onClick={onRunBrief}
                 disabled={briefRunning}
-                className="inline-flex items-center gap-1.5 px-3 h-8 rounded-md bg-nexus-mint text-nexus-bg text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
+                className="inline-flex items-center gap-1.5 px-3 h-8 rounded-md bg-solent-mint text-solent-bg text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition-opacity"
               >
                 {briefRunning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Run brief
               </button>
@@ -323,20 +323,20 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
 
         {/* Detail card */}
         {selected && (
-          <div className="absolute right-3 top-3 w-64 rounded-lg border border-nexus-border bg-nexus-surface/95 backdrop-blur shadow-2xl p-3 z-20">
+          <div className="absolute right-3 top-3 w-64 rounded-lg border border-solent-border bg-solent-surface/95 backdrop-blur shadow-2xl p-3 z-20">
             <div className="flex items-start justify-between gap-2 mb-1.5">
               <span className="flex items-center gap-1.5 text-[9px] font-mono uppercase tracking-wider" style={{ color: TYPE_STYLE[selected.type].color }}>
                 <i className="w-2 h-2 rounded-full" style={{ backgroundColor: TYPE_STYLE[selected.type].color }} />
                 {selected.type}
               </span>
-              <button onClick={() => setSelected(null)} className="text-nexus-dim hover:text-nexus-text" aria-label="Close detail">
+              <button onClick={() => setSelected(null)} className="text-solent-dim hover:text-solent-text" aria-label="Close detail">
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
             <h3 className="text-xs font-semibold text-zinc-200 leading-snug mb-1">{selected.label}</h3>
-            {selected.detail && <p className="text-[10px] text-nexus-muted leading-relaxed mb-2">{selected.detail}</p>}
-            <div className="border-t border-nexus-border/50 pt-2">
-              <span className="block text-[9px] font-mono uppercase tracking-wider text-nexus-dim mb-1">Connections</span>
+            {selected.detail && <p className="text-[10px] text-solent-muted leading-relaxed mb-2">{selected.detail}</p>}
+            <div className="border-t border-solent-border/50 pt-2">
+              <span className="block text-[9px] font-mono uppercase tracking-wider text-solent-dim mb-1">Connections</span>
               {[...(adjacency.get(selected.id) ?? [])].slice(0, 6).map((id) => {
                 const n = simRef.current.find((x) => x.id === id);
                 if (!n) return null;
@@ -344,17 +344,17 @@ export default function KnowledgeGraph({ onRunBrief, briefRunning }: { onRunBrie
                 return (
                   <button key={id} onClick={() => setSelected(n)} className="w-full flex items-center gap-1.5 py-0.5 text-left group">
                     <i className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: TYPE_STYLE[n.type].color }} />
-                    <span className="text-[10px] text-zinc-400 group-hover:text-nexus-mint truncate transition-colors">{n.label}</span>
-                    <span className="ml-auto text-[8px] font-mono text-nexus-dim shrink-0">{EDGE_LABEL[edge?.kind ?? 'has']}</span>
+                    <span className="text-[10px] text-zinc-400 group-hover:text-solent-mint truncate transition-colors">{n.label}</span>
+                    <span className="ml-auto text-[8px] font-mono text-solent-dim shrink-0">{EDGE_LABEL[edge?.kind ?? 'has']}</span>
                   </button>
                 );
               })}
-              {(adjacency.get(selected.id)?.size ?? 0) === 0 && <p className="text-[10px] text-nexus-dim">No connections.</p>}
+              {(adjacency.get(selected.id)?.size ?? 0) === 0 && <p className="text-[10px] text-solent-dim">No connections.</p>}
             </div>
           </div>
         )}
 
-        <span className="absolute left-3 bottom-2.5 text-[9px] font-mono text-nexus-dim z-10">drag nodes · scroll to zoom · drag canvas to pan</span>
+        <span className="absolute left-3 bottom-2.5 text-[9px] font-mono text-solent-dim z-10">drag nodes · scroll to zoom · drag canvas to pan</span>
       </div>
     </div>
   );

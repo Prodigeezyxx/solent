@@ -11,7 +11,7 @@ import { listDocs, getDoc, saveDoc, deleteDoc } from './docs';
 
 const app = new Hono<{ Bindings: Env }>();
 
-app.get('/api/health', (c) => c.json({ service: 'nexus-conductor', status: 'ok' }));
+app.get('/api/health', (c) => c.json({ service: 'solent-conductor', status: 'ok' }));
 
 // ---- ONE-SHOT EXECUTIVE PASS -------------------------------------------
 // Pulls Pumble + Gmail + Zoho in parallel, makes exactly ONE LLM call,
@@ -257,7 +257,7 @@ app.post('/api/chat', async (c) => {
 app.all('*', (c) => {
   const assets = (c.env as unknown as { ASSETS?: { fetch: (r: Request) => Promise<Response> } }).ASSETS;
   if (assets) return assets.fetch(c.req.raw);
-  return c.json({ service: 'nexus-conductor', status: 'ok' });
+  return c.json({ service: 'solent-conductor', status: 'ok' });
 });
 
 export default {

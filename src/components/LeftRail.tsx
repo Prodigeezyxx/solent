@@ -13,10 +13,10 @@ export default function LeftRail({ agents, selectedAgent, onSelectAgent }: LeftR
   const onlineCount = agents.filter((a) => a.status !== 'idle').length;
 
   return (
-    <aside className="w-60 shrink-0 border-r border-nexus-border bg-nexus-surface/40 flex flex-col overflow-y-auto hidden md:flex">
-      <div className="p-4 border-b border-nexus-border/50">
-        <h2 className="text-xs font-mono tracking-widest text-nexus-dim uppercase mb-1">Agent Council</h2>
-        <p className="text-[10px] text-nexus-dim">{agents.length} Specialists · {onlineCount} active</p>
+    <aside className="w-60 shrink-0 border-r border-solent-border bg-solent-surface/40 flex flex-col overflow-y-auto hidden md:flex">
+      <div className="p-4 border-b border-solent-border/50">
+        <h2 className="text-xs font-mono tracking-widest text-solent-dim uppercase mb-1">Agent Council</h2>
+        <p className="text-[10px] text-solent-dim">{agents.length} Specialists · {onlineCount} active</p>
       </div>
 
       <div className="flex-1 py-2">
@@ -28,7 +28,7 @@ export default function LeftRail({ agents, selectedAgent, onSelectAgent }: LeftR
               onClick={() => onSelectAgent(agent.id)}
               aria-pressed={selected}
               className={`w-full flex items-center gap-3 px-4 py-2 cursor-pointer transition-colors text-left group ${
-                selected ? 'bg-nexus-border/40' : 'hover:bg-nexus-border/20'
+                selected ? 'bg-solent-border/40' : 'hover:bg-solent-border/20'
               }`}
             >
               <div className="relative flex items-center justify-center w-3 h-3 shrink-0">
@@ -50,28 +50,28 @@ export default function LeftRail({ agents, selectedAgent, onSelectAgent }: LeftR
                 <div className="flex items-center justify-between">
                   <span
                     className={`text-xs font-bold font-mono tracking-wide group-hover:text-white transition-colors ${
-                      selected ? 'text-nexus-mint' : ''
+                      selected ? 'text-solent-mint' : ''
                     }`}
                     style={agent.status === 'working' && !selected ? { color: agent.color } : undefined}
                   >
                     {agent.name}
                   </span>
                   {agent.status === 'working' && (
-                    <span className="text-[9px] font-mono px-1 rounded bg-nexus-bg text-nexus-dim border border-nexus-border">
+                    <span className="text-[9px] font-mono px-1 rounded bg-solent-bg text-solent-dim border border-solent-border">
                       ACTIVE
                     </span>
                   )}
                 </div>
-                <span className="text-[10px] text-nexus-dim block truncate">{agent.job}</span>
+                <span className="text-[10px] text-solent-dim block truncate">{agent.job}</span>
               </div>
             </button>
           );
         })}
       </div>
 
-      <div className="p-4 border-t border-nexus-border/50">
-        <div className="flex items-center gap-2 text-[10px] font-mono text-nexus-dim">
-          <Zap className="w-3 h-3 text-nexus-mint" />
+      <div className="p-4 border-t border-solent-border/50">
+        <div className="flex items-center gap-2 text-[10px] font-mono text-solent-dim">
+          <Zap className="w-3 h-3 text-solent-mint" />
           <span>Collective capacity 82%</span>
         </div>
       </div>

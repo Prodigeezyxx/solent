@@ -1,4 +1,4 @@
-name = "nexus-worker"
+name = "solent-worker"
 main = "src/index.ts"
 compatibility_date = "2024-11-06"
 compatibility_flags = ["nodejs_compat"]
@@ -14,10 +14,10 @@ not_found_handling = "single-page-application"
 [triggers]
 crons = ["30 6 * * 1-5"]
 
-# D1 database binding (created via: wrangler d1 create nexus-db)
+# D1 database binding (created via: wrangler d1 create solent-db)
 [[d1_databases]]
 binding = "DB"
-database_name = "nexus-db"
+database_name = "solent-db"
 database_id = "REPLACE_WITH_YOUR_D1_ID"
 migrations_dir = "migrations"
 

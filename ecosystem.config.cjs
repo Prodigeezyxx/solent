@@ -2,7 +2,7 @@ module.exports = {
   apps: [
     {
       // One process = full system: Worker API + D1 (local) + built React UI.
-      name: 'nexus',
+      name: 'solent',
       script: 'npx',
       args: 'wrangler dev --port 3000 --ip 0.0.0.0',
       cwd: '/home/user/webapp/worker',

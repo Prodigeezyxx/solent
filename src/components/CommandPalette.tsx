@@ -84,29 +84,29 @@ export default function CommandPalette({ isOpen, onClose, onAction }: CommandPal
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: -20 }}
           transition={{ type: 'spring', bounce: 0, duration: 0.2 }}
-          className="relative w-full max-w-2xl bg-nexus-bg border border-nexus-border rounded-xl shadow-2xl overflow-hidden"
+          className="relative w-full max-w-2xl bg-solent-bg border border-solent-border rounded-xl shadow-2xl overflow-hidden"
         >
-          <div className="flex items-center px-4 py-4 border-b border-nexus-border">
-            <Search className="w-5 h-5 text-nexus-mint mr-3" />
+          <div className="flex items-center px-4 py-4 border-b border-solent-border">
+            <Search className="w-5 h-5 text-solent-mint mr-3" />
             <input
               ref={inputRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="flex-1 bg-transparent border-none outline-none text-lg text-white font-sans placeholder:text-nexus-dim"
-              placeholder="Command NEXUS..."
+              className="flex-1 bg-transparent border-none outline-none text-lg text-white font-sans placeholder:text-solent-dim"
+              placeholder="Command SOLENT..."
             />
-            <button onClick={onClose} className="text-nexus-dim hover:text-white transition-colors p-1" aria-label="Close">
+            <button onClick={onClose} className="text-solent-dim hover:text-white transition-colors p-1" aria-label="Close">
               <X className="w-4 h-4" />
             </button>
           </div>
 
           <div className="max-h-[60vh] overflow-y-auto p-2">
-            <div className="px-2 py-1.5 text-[10px] font-mono tracking-widest text-nexus-dim uppercase mb-1">
+            <div className="px-2 py-1.5 text-[10px] font-mono tracking-widest text-solent-dim uppercase mb-1">
               Top Actions
             </div>
 
             {filtered.length === 0 && (
-              <div className="px-3 py-6 text-center text-xs text-nexus-dim">No matching command.</div>
+              <div className="px-3 py-6 text-center text-xs text-solent-dim">No matching command.</div>
             )}
 
             {filtered.map((item, index) => (
@@ -115,7 +115,7 @@ export default function CommandPalette({ isOpen, onClose, onAction }: CommandPal
                 onClick={() => onAction(item.action)}
                 onMouseEnter={() => setActive(index)}
                 className={`w-full flex items-center justify-between px-3 py-3 rounded-lg group transition-colors text-left ${
-                  active === index ? 'bg-nexus-border/40' : 'hover:bg-nexus-border/20'
+                  active === index ? 'bg-solent-border/40' : 'hover:bg-solent-border/20'
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -126,14 +126,14 @@ export default function CommandPalette({ isOpen, onClose, onAction }: CommandPal
                     {item.icon}
                   </div>
                   <div>
-                    <div className="text-sm font-medium text-white group-hover:text-nexus-mint transition-colors">
+                    <div className="text-sm font-medium text-white group-hover:text-solent-mint transition-colors">
                       {item.label}
                     </div>
-                    <div className="text-xs text-nexus-dim">{item.hint}</div>
+                    <div className="text-xs text-solent-dim">{item.hint}</div>
                   </div>
                 </div>
                 <ChevronRight
-                  className={`w-4 h-4 text-nexus-dim transition-opacity ${
+                  className={`w-4 h-4 text-solent-dim transition-opacity ${
                     active === index ? 'opacity-100' : 'opacity-0'
                   }`}
                 />
@@ -141,7 +141,7 @@ export default function CommandPalette({ isOpen, onClose, onAction }: CommandPal
             ))}
           </div>
 
-          <div className="px-4 py-2 bg-nexus-surface/50 border-t border-nexus-border flex items-center justify-between text-[10px] font-mono text-nexus-dim">
+          <div className="px-4 py-2 bg-solent-surface/50 border-t border-solent-border flex items-center justify-between text-[10px] font-mono text-solent-dim">
             <span>Use ↑↓ to navigate</span>
             <span>Press Esc to close</span>
           </div>

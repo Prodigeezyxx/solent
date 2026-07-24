@@ -167,7 +167,7 @@ function App() {
   const completed = tasks.filter((t) => t.done).length;
 
   return (
-    <div className="h-screen flex flex-col bg-nexus-bg text-nexus-text overflow-hidden">
+    <div className="h-screen flex flex-col bg-solent-bg text-solent-text overflow-hidden">
       <a className="skip-link" href="#main-content">Skip to main content</a>
 
       <Topbar mode={mode} setMode={setMode} onOpenPalette={() => setPaletteOpen(true)} />
@@ -213,9 +213,9 @@ function App() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 8 }}
-            className="fixed right-4 bottom-12 z-[120] flex items-center gap-2 px-3 py-2.5 border border-nexus-border rounded-lg bg-nexus-surface text-nexus-muted text-xs shadow-2xl"
+            className="fixed right-4 bottom-12 z-[120] flex items-center gap-2 px-3 py-2.5 border border-solent-border rounded-lg bg-solent-surface text-solent-muted text-xs shadow-2xl"
           >
-            <CheckCircle2 className="w-4 h-4 text-nexus-mint" /> {toast}
+            <CheckCircle2 className="w-4 h-4 text-solent-mint" /> {toast}
           </motion.div>
         )}
       </AnimatePresence>

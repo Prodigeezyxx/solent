@@ -38,3 +38,6 @@ pids/
 worker/.dev.vars
 worker/.wrangler/
 worker/dev.vars
+
+# local D1 backups (contain secrets)
+worker/.d1_backup_*.sql
