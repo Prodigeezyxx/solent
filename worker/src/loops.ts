@@ -1,5 +1,5 @@
 import type { D1Database } from '@cloudflare/workers-types';
-import type { SourceResult } from './connectors';
+import type { MyReply, SourceResult } from './connectors';
 
 /**
  * OPEN LOOPS — commitments in flight, derived deterministically (zero LLM).
@@ -33,6 +33,107 @@ const INBOUND_REASON = /direct ask|question to you/;
 
 /** Bots and app integrations never hold real commitments. */
 const BOT_RE = /\b(bot|by cake\.com|google drive|clockify|plaky|calendar|notification|no.?reply|noreply|mailer|automation)\b/i;
+
+const REPLY_TASK_RE = /\b(reply|respond|answer|confirm|email|message|contact|follow[ -]?up|get back)\b/i;
+
+const normaliseIdentity = (value: string) => value.trim().toLowerCase();
+
+const replyTime = (reply: MyReply): number => {
+  const parsed = Date.parse(reply.ts || '');
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+/**
+ * Mark communication tasks done when sent-message evidence proves the operator
+ * answered. New tasks are linked by source/ref; older unlinked tasks use the
+ * deliberately conservative combination of a reply-action verb + counterparty.
+ */
+export async function reconcileTasksFromReplies(db: D1Database, results: SourceResult[]): Promise<number> {
+  const replies = results.flatMap((result) => result.myReplies ?? []).filter((reply) => replyTime(reply) > 0);
+  if (!replies.length) return 0;
+
+  const latestByIdentity = new Map<string, MyReply>();
+  for (const reply of replies) {
+    for (const identity of [reply.counterpartyId, reply.counterparty]) {
+      const key = normaliseIdentity(identity || '');
+      if (!key) continue;
+      const current = latestByIdentity.get(key);
+      if (!current || replyTime(current) < replyTime(reply)) latestByIdentity.set(key, reply);
+    }
+  }
+
+  const itemByRef = new Map<string, SourceResult['items'][number]>(
+    results.flatMap((result) => result.items.map((item) => [`${item.source}:${item.ref}`, item])),
+  );
+  const { results: tasks } = await db
+    .prepare(
+      `SELECT id, title, context, source, source_ref, counterparty_id, created_at
+       FROM tasks WHERE done = 0`,
+    )
+    .all<{
+      id: number;
+      title: string;
+      context: string | null;
+      source: string | null;
+      source_ref: string | null;
+      counterparty_id: string | null;
+      created_at: number;
+    }>();
+
+  const completed: { id: number; reason: string }[] = [];
+  for (const task of tasks ?? []) {
+    let evidence: MyReply | undefined;
+    let reason = '';
+
+    if (task.source && task.source_ref) {
+      const item = itemByRef.get(`${task.source}:${task.source_ref}`);
+      if (item?.repliedSince && item.fromId) {
+        evidence = latestByIdentity.get(normaliseIdentity(item.fromId));
+        reason = `sent ${task.source} reply for ${task.source_ref}`;
+      }
+    }
+
+    if (!evidence && task.counterparty_id) {
+      const candidate = latestByIdentity.get(normaliseIdentity(task.counterparty_id));
+      if (candidate && replyTime(candidate) > task.created_at) {
+        evidence = candidate;
+        reason = `sent reply to ${candidate.counterparty}`;
+      }
+    }
+
+    // Legacy tasks predate source linkage. Only auto-complete explicit
+    // communication actions which name the person we demonstrably replied to.
+    if (!evidence && REPLY_TASK_RE.test(task.title)) {
+      const haystack = normaliseIdentity(`${task.title} ${task.context ?? ''}`);
+      evidence = replies
+        .filter((reply) => replyTime(reply) > task.created_at)
+        .sort((a, b) => replyTime(b) - replyTime(a))
+        .find((reply) => {
+          const email = normaliseIdentity(reply.counterpartyId);
+          const name = normaliseIdentity(reply.counterparty);
+          return (email && haystack.includes(email)) || (name.length >= 3 && haystack.includes(name));
+        });
+      if (evidence) reason = `sent reply to ${evidence.counterparty} (legacy task match)`;
+    }
+
+    if (evidence) completed.push({ id: task.id, reason });
+  }
+
+  const now = Date.now();
+  for (let i = 0; i < completed.length; i += 50) {
+    await db.batch(
+      completed.slice(i, i + 50).map(({ id, reason }) =>
+        db
+          .prepare(
+            `UPDATE tasks SET done = 1, updated_at = ?, auto_completed_at = ?, completion_reason = ?
+             WHERE id = ? AND done = 0`,
+          )
+          .bind(now, now, reason, id),
+      ),
+    );
+  }
+  return completed.length;
+}
 
 export async function deriveLoops(db: D1Database, results: SourceResult[]): Promise<void> {
   const now = Date.now();

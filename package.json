@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
+    "test:worker": "mkdir -p worker/.test-build && ./worker/node_modules/.bin/esbuild worker/tests/connectors.test.ts --bundle --platform=node --format=esm --outfile=worker/.test-build/connectors.test.mjs && node --test worker/.test-build/connectors.test.mjs; code=$?; rm -rf worker/.test-build; exit $code",
     "setup": "npm install && cd worker && npm install && npx wrangler d1 migrations apply solent-db --local",
     "start": "npm run build && cd worker && npx wrangler dev --port 3000",
     "db:export": "./scripts/db-export.sh",

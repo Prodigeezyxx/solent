@@ -4,7 +4,7 @@ import { digestForPrompt, fetchAllSources, persistPass, type SourceCoverage, typ
 import { saveSnapshot } from './snapshots';
 import { loadSettings, type Settings } from './settings';
 import { createTask, logAgentRun, logMemory } from './db';
-import { deriveLoops, loopsForPrompt } from './loops';
+import { deriveLoops, loopsForPrompt, reconcileTasksFromReplies } from './loops';
 import { docsForPrompt } from './docs';
 import { recordUsage, usageFromResponse } from './usage';
 
@@ -117,7 +117,7 @@ function briefSystem(s: Settings): string {
     'In ONE pass, produce their executive brief as strict JSON. Rules: be ruthless about priority — only genuinely actionable items ' +
     'become priorities (up to 10 when the inbox genuinely warrants it). Ignore newsletters, notifications, and noise. Suggested replies for ' +
     `every message that clearly awaits ${name} (up to 5, ≤80 words each, their voice: warm, precise, outcome-driven). ` +
-    'Signals are patterns worth knowing, not tasks (up to 6 — cross-reference threads, spot trends across sources). Reference items by their [source:n] tag in source_ref. ' +
+    'Signals are patterns worth knowing, not tasks (up to 6 — cross-reference threads, spot trends across sources). Copy the exact [source:ref] tag into source_ref so every task stays linked to its message. ' +
     'Think deeply: connect related items across Pumble/Gmail/Zoho, surface commitments implied but not stated, and flag anything time-sensitive. ' +
     'Respond ONLY with JSON matching: {"headline": string (≤90 chars, the single most important thing), ' +
     '"summary": string (≤80 words, the shape of the day), ' +
@@ -229,6 +229,7 @@ async function refreshSources(db: D1Database, settings: Settings, cached: Brief)
     if (!anyOk && cached.inbox.length > 0) return cached;
     try { await persistPass(db, results, people); } catch { /* non-fatal */ }
     try { await deriveLoops(db, results); } catch { /* non-fatal */ }
+    try { await reconcileTasksFromReplies(db, results); } catch { /* migration may still be applying */ }
     const merged: Brief = {
       ...cached,
       refreshed_at: Date.now(),
@@ -277,6 +278,11 @@ export async function runBrief(env: Env, opts: { force?: boolean } = {}): Promis
     await deriveLoops(db, results);
   } catch {
     /* loops table may not exist before migration — non-fatal */
+  }
+  try {
+    await reconcileTasksFromReplies(db, results);
+  } catch {
+    /* linked-task columns may not exist while migration is rolling out */
   }
 
   const base: Brief = {
@@ -417,6 +423,15 @@ function sameTask(a: Set<string>, b: Set<string>): boolean {
   return shared / Math.min(a.size, b.size) >= 0.6;
 }
 
+function priorityOrigin(sourceRef: string, inbox: SourceItem[]) {
+  const match = sourceRef.trim().match(/^\[?(pumble|gmail|zoho):([^\]]+)\]?$/i);
+  if (!match) return undefined;
+  const source = match[1].toLowerCase();
+  const ref = match[2];
+  const item = inbox.find((candidate) => candidate.source === source && candidate.ref === ref);
+  return item ? { source, ref, counterpartyId: item.fromId, repliedSince: item.repliedSince } : undefined;
+}
+
 async function persistBrief(db: D1Database, brief: Brief): Promise<void> {
   // Compare against open tasks AND recently-completed ones (7 days) — a task
   // you finished this morning must not respawn from the afternoon pass.
@@ -427,10 +442,19 @@ async function persistBrief(db: D1Database, brief: Brief): Promise<void> {
     .all<{ title: string }>();
   const existing = (results ?? []).map((r) => taskTokens(r.title));
   for (const p of brief.priorities) {
+    const origin = priorityOrigin(p.source_ref, brief.inbox);
+    // Defense in depth: even if the model ignores ALREADY-REPLIED, never
+    // create a task for a message the sent scan proved was already handled.
+    if (origin?.repliedSince) continue;
     const tokens = taskTokens(p.title);
     if (existing.some((e) => sameTask(e, tokens))) continue;
     existing.push(tokens); // also dedup within this batch of priorities
-    await createTask(db, p.title, p.context || p.source_ref);
+    await createTask(
+      db,
+      p.title,
+      p.context || p.source_ref,
+      origin ? { source: origin.source, ref: origin.ref, counterpartyId: origin.counterpartyId } : undefined,
+    );
   }
   if (brief.headline) {
     await logMemory(db, `Brief: ${brief.headline}`, 'ATLAS', 'one-shot brief');

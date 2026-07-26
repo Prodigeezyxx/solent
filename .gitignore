@@ -4,6 +4,7 @@ node_modules/
 # Build output
 dist/
 coverage/
+worker/.test-build/
 
 # Local environment and secrets
 .env

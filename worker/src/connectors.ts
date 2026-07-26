@@ -255,8 +255,9 @@ function expandMentions(text: string, dir: PumbleDirectory): { text: string; men
 export async function fetchPumble(
   db: D1Database,
   s: Settings,
-  perChannel = 12,
+  perChannel = 50,
   maxChannels = 10,
+  maxDms = 50,
 ): Promise<{ result: SourceResult; people: PersonRecord[] }> {
   const key = s.PUMBLE_API_KEY;
   if (!key) return { result: { source: 'pumble', ok: false, configured: false, items: [] }, people: [] };
@@ -274,7 +275,9 @@ export async function fetchPumble(
     const isDmChan = (c: any) => (c.channelType ?? c.type) === 'DIRECT';
     // DMs are always high-signal: scan them plus the wanted/public channels.
     const allDms = chans.filter(isDmChan);
-    const dms = allDms.slice(0, 6);
+    // Replies are most often in DMs. The previous six-DM cap silently omitted
+    // conversations, so sent evidence could never close their tasks.
+    const dms = allDms.slice(0, maxDms);
     const allPublics = wanted.length
       ? chans.filter((c: any) => wanted.includes(String(c.name ?? '').toLowerCase()))
       : chans.filter((c: any) => !isDmChan(c));
@@ -444,13 +447,45 @@ const decodeHeader = (s: string) =>
     .trim();
 
 /** "Jane Doe <jane@x.com>" → { name, email }. NEVER pre-strip() the input — it eats <addr>. */
-function parseAddress(raw: string): { name: string; email?: string } {
+export function parseAddress(raw: string): { name: string; email?: string } {
   const cleaned = decodeHeader(raw);
   const m = cleaned.match(/^"?([^"<]+?)"?\s*<([^>]+)>$/);
   if (m) return { name: m[1].trim(), email: m[2].trim().toLowerCase() };
   const email = cleaned.trim().toLowerCase();
   if (email.includes('@')) return { name: prettifyLocalPart(email.split('@')[0]), email };
   return { name: cleaned.trim() || 'unknown' };
+}
+
+/** Split RFC-style address lists without breaking quoted display names. */
+export function parseAddressList(raw: unknown): { name: string; email?: string }[] {
+  const values = Array.isArray(raw) ? raw.map(String) : [String(raw ?? '')];
+  const parts: string[] = [];
+  for (const value of values) {
+    let start = 0;
+    let quoted = false;
+    let angleDepth = 0;
+    for (let i = 0; i < value.length; i++) {
+      const char = value[i];
+      if (char === '"' && value[i - 1] !== '\\') quoted = !quoted;
+      else if (!quoted && char === '<') angleDepth++;
+      else if (!quoted && char === '>') angleDepth = Math.max(0, angleDepth - 1);
+      else if (!quoted && angleDepth === 0 && (char === ',' || char === ';')) {
+        parts.push(value.slice(start, i));
+        start = i + 1;
+      }
+    }
+    parts.push(value.slice(start));
+  }
+  return parts.map((part) => parseAddress(part.trim())).filter((address) => !!address.email);
+}
+
+/** Provider timestamps can be epoch seconds, epoch milliseconds, or ISO/RFC strings. */
+export function providerTimestamp(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '';
+  const raw = String(value).trim();
+  const numeric = /^\d+$/.test(raw) ? Number(raw) : NaN;
+  const ms = Number.isFinite(numeric) ? (numeric < 10_000_000_000 ? numeric * 1000 : numeric) : Date.parse(raw);
+  return Number.isFinite(ms) ? new Date(ms).toISOString() : '';
 }
 
 /** "jane.doe" / "jane_doe1" → "Jane Doe" — humane fallback when only an address exists. */
@@ -506,7 +541,7 @@ export async function fetchGmail(
       listQuery(`in:inbox is:important newer_than:${lookback}d -category:promotions -category:social -from:noreply -from:notifications`, 15),
       // SENT SCAN — what the operator already answered. Resolution evidence,
       // never inbox items: replied threads stop resurfacing as "needs you".
-      listQuery(`in:sent newer_than:${lookback}d`, 40),
+      listQuery(`in:sent newer_than:${lookback}d`, 100),
     ]);
     const recentIds = recent.ids;
     const starredIds = starredQ.ids;
@@ -543,10 +578,7 @@ export async function fetchGmail(
             (m.payload?.headers ?? []).find((x: any) => x.name?.toLowerCase() === name)?.value ?? '';
           const ts = h('date');
           const subject = clip(strip(h('subject')), 100);
-          const recipients = `${h('to')},${h('cc')}`
-            .split(',')
-            .map((raw) => parseAddress(raw.trim()))
-            .filter((a) => a.email);
+          const recipients = parseAddressList(`${h('to')},${h('cc')}`);
           return recipients.map((a) => ({
             source: 'gmail' as const,
             counterpartyId: a.email!,
@@ -694,18 +726,19 @@ export async function fetchZoho(
       const sentFolder = await zohoSentFolderId(db, s, token, accountId);
       if (sentFolder) {
         const sres = await fetch(
-          `https://mail.zoho.${zohoDc(s)}/api/accounts/${accountId}/messages/view?folderId=${sentFolder}&limit=25&sortorder=false`,
+          `https://mail.zoho.${zohoDc(s)}/api/accounts/${accountId}/messages/view?folderId=${sentFolder}&limit=100&sortorder=false`,
           { headers: { Authorization: `Zoho-oauthtoken ${token}` } },
         );
         const sjson = await safeJson(sres);
         if (sres.ok) {
           for (const m of sjson.data ?? []) {
-            const ts = m.sentDateInGMT ?? m.receivedTime;
-            const when = ts ? new Date(Number(ts)).toISOString() : '';
+            const when = providerTimestamp(m.sentDateInGMT ?? m.sentDate ?? m.receivedTime);
             const subject = clip(strip(String(m.subject ?? '')), 100);
-            for (const raw of String(m.toAddress ?? '').split(',')) {
-              const a = parseAddress(strip(raw));
-              if (a.email) myReplies.push({ source: 'zoho', counterpartyId: a.email, counterparty: a.name, ts: when, subject });
+            // Never strip address headers before parsing: strip() removes the
+            // <email> portion from "Name <email>", which was the production
+            // reason Zoho replies generated no usable evidence.
+            for (const a of parseAddressList(m.toAddress ?? m.to ?? m.recipient)) {
+              myReplies.push({ source: 'zoho', counterpartyId: a.email!, counterparty: a.name, ts: when, subject });
             }
           }
         }
@@ -1015,7 +1048,6 @@ export function digestForPrompt(results: SourceResult[], maxItems = 80): string 
   }
 
   const lines: string[] = [];
-  let i = 0;
   for (const r of ranked) {
     const mine = picked.get(r.source)!;
     // COVERAGE IN THE PROMPT: the model must know when its view is partial,
@@ -1024,7 +1056,6 @@ export function digestForPrompt(results: SourceResult[], maxItems = 80): string 
     const cov = r.coverage?.capped ? ` | COVERAGE: ${r.coverage.note}` : '';
     lines.push(`## ${r.source.toUpperCase()} — ${r.ok ? `${r.items.length} items (${mine.length} shown, newest/flagged first)${cov}` : `ERROR: ${r.error}`}`);
     for (const item of mine) {
-      i++;
       const flags = [
         item.isDm ? 'DM' : '',
         item.mentionsMe ? 'MENTIONS-YOU' : '',
@@ -1035,7 +1066,9 @@ export function digestForPrompt(results: SourceResult[], maxItems = 80): string 
       ]
         .filter(Boolean)
         .join(' ');
-      lines.push(`[${item.source}:${i}] ${item.channel} | from ${item.from}${item.ts ? ` | ${item.ts}` : ''}${flags ? ` | ${flags}` : ''}\n  ${item.title !== item.channel ? `${item.title}: ` : ''}${item.text}`);
+      // Use the provider's real ref, not a display-only counter. Priorities can
+      // now be linked back to the exact originating message and auto-completed.
+      lines.push(`[${item.source}:${item.ref}] ${item.channel} | from ${item.from}${item.ts ? ` | ${item.ts}` : ''}${flags ? ` | ${flags}` : ''}\n  ${item.title !== item.channel ? `${item.title}: ` : ''}${item.text}`);
     }
   }
   return lines.join('\n');

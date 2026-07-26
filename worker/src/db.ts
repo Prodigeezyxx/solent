@@ -8,8 +8,19 @@ export interface TaskRow {
   done: number;
   priority: number;
   deferred_until?: number | null;
+  source?: string | null;
+  source_ref?: string | null;
+  counterparty_id?: string | null;
+  auto_completed_at?: number | null;
+  completion_reason?: string | null;
   created_at: number;
   updated_at: number;
+}
+
+export interface TaskOrigin {
+  source: string;
+  ref: string;
+  counterpartyId?: string;
 }
 
 export interface MemoryRow {
@@ -37,15 +48,37 @@ export async function listTasks(db: D1Database): Promise<TaskRow[]> {
   }
 }
 
-export async function createTask(db: D1Database, title: string, context?: string): Promise<TaskRow> {
+export async function createTask(db: D1Database, title: string, context?: string, origin?: TaskOrigin): Promise<TaskRow> {
   const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const { results } = await db
-    .prepare(
-      'INSERT INTO tasks (title, context, time, done, priority, created_at, updated_at) VALUES (?, ?, ?, 0, 0, ?, ?) RETURNING *',
-    )
-    .bind(title, context ?? null, t, now(), now())
-    .all<TaskRow>();
-  return (results ?? [])[0];
+  const created = now();
+  try {
+    const { results } = await db
+      .prepare(
+        `INSERT INTO tasks (title, context, time, done, priority, source, source_ref, counterparty_id, created_at, updated_at)
+         VALUES (?, ?, ?, 0, 0, ?, ?, ?, ?, ?) RETURNING *`,
+      )
+      .bind(
+        title,
+        context ?? null,
+        t,
+        origin?.source ?? null,
+        origin?.ref ?? null,
+        origin?.counterpartyId ?? null,
+        created,
+        created,
+      )
+      .all<TaskRow>();
+    return (results ?? [])[0];
+  } catch {
+    // Pre-migration compatibility while a newly deployed Worker and D1 roll out.
+    const { results } = await db
+      .prepare(
+        'INSERT INTO tasks (title, context, time, done, priority, created_at, updated_at) VALUES (?, ?, ?, 0, 0, ?, ?) RETURNING *',
+      )
+      .bind(title, context ?? null, t, created, created)
+      .all<TaskRow>();
+    return (results ?? [])[0];
+  }
 }
 
 export async function toggleTask(db: D1Database, id: number): Promise<TaskRow | null> {
