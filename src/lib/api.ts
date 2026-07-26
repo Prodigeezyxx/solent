@@ -91,6 +91,8 @@ export interface InboxItem {
   mentionsMe?: boolean;
   needsAttention?: boolean;
   attentionReason?: string;
+  /** You have SENT a reply to this person since this arrived — handled. */
+  repliedSince?: boolean;
 }
 
 /** COVERAGE LEDGER — fetched vs available per source, so gaps are never silent. */

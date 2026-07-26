@@ -145,6 +145,10 @@ cd worker && npx wrangler d1 execute solent-db --remote --file=../solent_db_expo
 
 **UX/UI overhaul prep:** `docs/UX_OVERHAUL.md` — design-token + component inventory, IA critique, mobile/voice roadmaps, and a 5-phase overhaul plan (each phase ships independently to the daily driver).
 
+**Sent-message reply evidence — resolved things stop resurfacing:** every pass now also scans what *you* sent — Gmail `in:sent` (4th parallel query), the Zoho **Sent** folder (folder id cached 30 days), and your own Pumble DM messages — into `MyReply` records. `applyReplyEvidence()` maps counterparty → your latest reply: any inbound item older than your reply gets `repliedSince=true`, its heuristic attention is downgraded (starred mail exempt — only you clear your own star), the digest marks it `ALREADY-REPLIED(...)` so the LLM never re-raises it as a priority or drafts another reply, and the UI shows a mint **✓ replied** chip. Matching inbound loops auto-close (`loops.ts`). Verified live: 35 items flagged in one pass, needs-attention count dropped accordingly.
+
+**Task de-duplication — root cause of "too many tasks repeat":** `persistBrief` now fuzzy-matches proposed tasks (action-verb stopwords stripped, token overlap ≥ 0.6) against open tasks **and** tasks completed in the last 7 days, plus intra-batch dedup within a single pass. The LLM prompt also carries an **EXISTING OPEN TASKS** block (25 titles) with an instruction not to re-propose them even reworded. One-time cleanup removed 48 duplicate open tasks (91 → 43).
+
 **Waiting on the operator:**
 - Re-mint the Google refresh token with `gmail.readonly` **+** `calendar.readonly` (same client id/secret) and paste it in Sources → Calendar goes live instantly, no redeploy
 - Weekend: fix own Cloudflare account (stale `nexus-worker` / assets-only `solent` deploys), then self-host via `--env selfhost`

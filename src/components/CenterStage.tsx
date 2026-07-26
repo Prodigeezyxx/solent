@@ -837,6 +837,11 @@ function ReceiveView({
                 <strong className="text-[11px] font-medium text-zinc-300 truncate">{item.from}</strong>
                 {item.channel && <span className="px-1.5 py-0.5 rounded bg-solent-border/60 text-[9px] font-mono text-solent-dim">{item.channel}</span>}
                 {item.mentionsMe ? <span className="flex items-center gap-0.5 text-[9px] font-mono text-solent-blue"><AtSign className="w-2.5 h-2.5" />you</span> : null}
+                {item.repliedSince ? (
+                  <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-solent-mint/10 text-[9px] font-mono text-solent-mint" title="You've sent this person a reply since this arrived — handled">
+                    <Check className="w-2.5 h-2.5" />replied
+                  </span>
+                ) : null}
                 {item.needsAttention ? (
                   <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-solent-orange/10 text-[9px] font-mono text-solent-orange">
                     <AlertTriangle className="w-2.5 h-2.5" />{item.attentionReason ?? 'needs you'}

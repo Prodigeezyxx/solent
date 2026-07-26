@@ -85,6 +85,24 @@ export async function deriveLoops(db: D1Database, results: SourceResult[]): Prom
     }
   }
 
+  // AUTO-CLOSE inbound loops when the OPERATOR has since replied (sent-mail
+  // evidence): you answered them — you no longer owe them. This kills the
+  // repetition where an already-answered ask kept nagging every pass.
+  for (const r of results) {
+    for (const rep of r.myReplies ?? []) {
+      if (!rep.counterpartyId || !rep.ts) continue;
+      stmts.push(
+        db
+          .prepare(
+            `UPDATE loops SET status = 'resolved', resolved_at = ?
+             WHERE direction = 'inbound' AND status = 'open'
+               AND LOWER(counterparty_id) = LOWER(?) AND (opened_ts IS NULL OR opened_ts < ?)`,
+          )
+          .bind(now, rep.counterpartyId, rep.ts),
+      );
+    }
+  }
+
   for (let i = 0; i < stmts.length; i += 50) {
     await db.batch(stmts.slice(i, i + 50));
   }

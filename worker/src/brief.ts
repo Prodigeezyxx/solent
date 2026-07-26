@@ -110,6 +110,8 @@ function briefSystem(s: Settings): string {
     ' You receive a raw digest of their real work signals (Pumble team chat, Gmail personal inbox, Zoho company inbox, Google Calendar schedule). ' +
     'GCAL items are upcoming events — weave them into the day’s shape: flag conflicts with priorities, prep needed before meetings, and RSVPs awaiting a response. ' +
     'Items flagged DM, MENTIONS-YOU, or ATTN(...) were pre-screened as likely needing the operator — weigh them heavily. ' +
+    'Items flagged ALREADY-REPLIED were ANSWERED by the operator since arriving — never make them priorities, never draft replies to them; mention only if the thread needs a follow-up beyond the sent reply. ' +
+    'An EXISTING OPEN TASKS block lists what is already on the queue — do NOT re-propose those as priorities (even reworded); only genuinely NEW actionable items become priorities. ' +
     'If an OPERATOR CONTEXT LIBRARY block is present, treat it as ground truth about the business. ' +
     'If OPEN LOOPS are present, oldest unresolved commitments deserve priority — nag about anything > 2 days old. ' +
     'In ONE pass, produce their executive brief as strict JSON. Rules: be ruthless about priority — only genuinely actionable items ' +
@@ -330,10 +332,22 @@ export async function runBrief(env: Env, opts: { force?: boolean } = {}): Promis
   const model = settings.OPENROUTER_MODEL || 'anthropic/claude-3.5-sonnet';
   try {
     const [loopCtx, docCtx] = await Promise.all([loopsForPrompt(db, 8), docsForPrompt(db, 3000)]);
+    // EXISTING TASKS in the prompt — the model sees the queue, so it stops
+    // re-proposing the same work in new words every pass.
+    let taskCtx = '';
+    try {
+      const { results: openTasks } = await db
+        .prepare('SELECT title FROM tasks WHERE done = 0 ORDER BY created_at DESC LIMIT 25')
+        .all<{ title: string }>();
+      if (openTasks?.length) {
+        taskCtx = `EXISTING OPEN TASKS (already queued — do NOT re-propose):\n${openTasks.map((t) => `- ${t.title}`).join('\n')}`;
+      }
+    } catch { /* non-fatal */ }
     const userMsg = [
       `Today: ${new Date().toUTCString()}`,
       docCtx,
       loopCtx,
+      taskCtx,
       `DIGEST:\n${digest}`,
     ].filter(Boolean).join('\n\n');
     const raw = await callModel(
@@ -373,11 +387,49 @@ export async function runBrief(env: Env, opts: { force?: boolean } = {}): Promis
   }
 }
 
+/**
+ * FUZZY TASK DEDUP — kills the repetition where each pass re-creates the
+ * same task with slightly different wording ("Reply to Jack on founding PM
+ * leads" vs "Respond to Jack on founding-PM leads"). Titles are normalised
+ * (lowercase, punctuation stripped, interchangeable action verbs collapsed)
+ * and compared by token overlap — ≥60% shared significant tokens = same task.
+ */
+const TASK_STOPWORDS = new Set([
+  'reply', 'respond', 'answer', 'follow', 'following', 'followup', 'follow-up', 'send', 'confirm',
+  'check', 'review', 'close', 'resolve', 'submit', 'chase', 'up', 'on', 'to', 'the', 'a', 'an',
+  'with', 'for', 'and', 'of', 'in', 'at', 'his', 'her', 'their', 'your', 'my', 'out', 'about', 're',
+]);
+
+function taskTokens(title: string): Set<string> {
+  return new Set(
+    title
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .split(/\s+/)
+      .filter((w) => w.length > 1 && !TASK_STOPWORDS.has(w)),
+  );
+}
+
+function sameTask(a: Set<string>, b: Set<string>): boolean {
+  if (a.size === 0 || b.size === 0) return false;
+  let shared = 0;
+  for (const t of a) if (b.has(t)) shared++;
+  return shared / Math.min(a.size, b.size) >= 0.6;
+}
+
 async function persistBrief(db: D1Database, brief: Brief): Promise<void> {
-  const { results } = await db.prepare('SELECT title FROM tasks WHERE done = 0').all<{ title: string }>();
-  const existing = new Set((results ?? []).map((r) => r.title.toLowerCase()));
+  // Compare against open tasks AND recently-completed ones (7 days) — a task
+  // you finished this morning must not respawn from the afternoon pass.
+  const weekAgo = Date.now() - 7 * 86_400_000;
+  const { results } = await db
+    .prepare('SELECT title FROM tasks WHERE done = 0 OR updated_at > ?')
+    .bind(weekAgo)
+    .all<{ title: string }>();
+  const existing = (results ?? []).map((r) => taskTokens(r.title));
   for (const p of brief.priorities) {
-    if (existing.has(p.title.toLowerCase())) continue;
+    const tokens = taskTokens(p.title);
+    if (existing.some((e) => sameTask(e, tokens))) continue;
+    existing.push(tokens); // also dedup within this batch of priorities
     await createTask(db, p.title, p.context || p.source_ref);
   }
   if (brief.headline) {

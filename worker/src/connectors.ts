@@ -33,6 +33,27 @@ export interface SourceItem {
   mentionsMe: boolean;
   needsAttention: boolean;
   attentionReason?: string;
+  /** The operator has SENT a reply to this person since this arrived — resolved, don't re-raise. */
+  repliedSince?: boolean;
+}
+
+/**
+ * REPLY EVIDENCE — proof the operator already answered someone.
+ *
+ * The system used to see only what ARRIVES, never what was SENT — so an
+ * answered email kept showing "needs you", its loop stayed open, and the
+ * model re-drafted the same reply every pass. Each source now also scans
+ * the operator's outgoing messages (Gmail in:sent, Zoho Sent folder, own
+ * Pumble DM messages) and reports who was replied to and when. Anything
+ * older than the reply is marked resolved automatically.
+ */
+export interface MyReply {
+  source: SourceName;
+  /** Counterparty key — email address (mail) or user id (pumble). */
+  counterpartyId: string;
+  counterparty: string;
+  ts: string;
+  subject?: string;
 }
 
 /**
@@ -65,6 +86,8 @@ export interface SourceResult {
   coverage?: SourceCoverage;
   /** Asks the OPERATOR made that are plausibly awaiting a reply (outbound open loops). */
   outbound?: OutboundAsk[];
+  /** Evidence of the operator's own SENT replies — used to auto-resolve. */
+  myReplies?: MyReply[];
 }
 
 export interface OutboundAsk {
@@ -261,6 +284,7 @@ export async function fetchPumble(
 
     const items: SourceItem[] = [];
     const outbound: OutboundAsk[] = [];
+    const myReplies: MyReply[] = [];
     const channelHitCap = new Set<string>();
     const results = await Promise.allSettled(
       scan.map(async (c: any) => {
@@ -298,6 +322,10 @@ export async function fetchPumble(
           const { text, mentionsMe } = expandMentions(m.rawText, dir);
 
           if (isMine) {
+            // REPLY EVIDENCE: your own DM message = you responded to this person.
+            if (isDm && partnerId && partner && m.ts) {
+              myReplies.push({ source: 'pumble', counterpartyId: partnerId, counterparty: partner, ts: m.ts });
+            }
             // OUTBOUND LOOP: you asked something and nobody has replied since.
             const asked = ASK_RE.test(text) || text.includes('?');
             const unanswered = !lastOtherTs || (m.ts && m.ts > lastOtherTs);
@@ -364,6 +392,7 @@ export async function fetchPumble(
         items,
         coverage: { available: null, fetched: items.length, capped, note: coverageNote },
         outbound,
+        myReplies,
       },
       people,
     };
@@ -471,10 +500,13 @@ export async function fetchGmail(
       // got dropped. It now feeds the coverage ledger.
       return { ids, available: Math.max(Number(j.resultSizeEstimate ?? ids.length), ids.length) };
     };
-    const [recent, starredQ, importantQ] = await Promise.all([
+    const [recent, starredQ, importantQ, sentQ] = await Promise.all([
       listQuery(`in:inbox newer_than:${lookback}d -category:promotions -category:social`, max),
       listQuery(`in:inbox is:starred newer_than:${lookback}d`, 25),
       listQuery(`in:inbox is:important newer_than:${lookback}d -category:promotions -category:social -from:noreply -from:notifications`, 15),
+      // SENT SCAN — what the operator already answered. Resolution evidence,
+      // never inbox items: replied threads stop resurfacing as "needs you".
+      listQuery(`in:sent newer_than:${lookback}d`, 40),
     ]);
     const recentIds = recent.ids;
     const starredIds = starredQ.ids;
@@ -496,6 +528,35 @@ export async function fetchGmail(
       ].filter(Boolean).join(' · '),
     };
     const people = new Map<string, PersonRecord>();
+
+    // Sent messages: extract WHO was replied to and WHEN (To + Date headers).
+    const myReplies: MyReply[] = (
+      await Promise.all(
+        sentQ.ids.map(async (id): Promise<MyReply[]> => {
+          const r = await fetch(
+            `https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}?format=metadata&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject&metadataHeaders=Date`,
+            { headers: auth },
+          );
+          if (!r.ok) return [];
+          const m = await safeJson(r);
+          const h = (name: string) =>
+            (m.payload?.headers ?? []).find((x: any) => x.name?.toLowerCase() === name)?.value ?? '';
+          const ts = h('date');
+          const subject = clip(strip(h('subject')), 100);
+          const recipients = `${h('to')},${h('cc')}`
+            .split(',')
+            .map((raw) => parseAddress(raw.trim()))
+            .filter((a) => a.email);
+          return recipients.map((a) => ({
+            source: 'gmail' as const,
+            counterpartyId: a.email!,
+            counterparty: a.name,
+            ts,
+            subject,
+          }));
+        }),
+      )
+    ).flat();
 
     const items = await Promise.all(
       ids.map(async (id): Promise<SourceItem | null> => {
@@ -538,7 +599,7 @@ export async function fetchGmail(
       }),
     );
     return {
-      result: { source: 'gmail', ok: true, configured: true, items: items.filter((i): i is SourceItem => !!i), coverage },
+      result: { source: 'gmail', ok: true, configured: true, items: items.filter((i): i is SourceItem => !!i), coverage, myReplies },
       people: [...people.values()],
     };
   } catch (e) {
@@ -588,6 +649,26 @@ async function zohoAccountId(db: D1Database, s: Settings, token: string): Promis
   return id;
 }
 
+/** Find the Sent folder id, cached 30 days — needed for the reply-evidence scan. */
+async function zohoSentFolderId(db: D1Database, s: Settings, token: string, accountId: string): Promise<string | null> {
+  const cached = await getCachedToken(db, 'zoho_sent_folder');
+  if (cached) return cached === 'none' ? null : cached;
+  try {
+    const res = await fetch(`https://mail.zoho.${zohoDc(s)}/api/accounts/${accountId}/folders`, {
+      headers: { Authorization: `Zoho-oauthtoken ${token}` },
+    });
+    const json = await safeJson(res);
+    const folders: any[] = json.data ?? [];
+    const sent = folders.find((f) => String(f.folderType ?? '').toLowerCase() === 'sent')
+      ?? folders.find((f) => /^sent/i.test(String(f.folderName ?? '')));
+    const id = sent ? String(sent.folderId) : null;
+    await cacheToken(db, 'zoho_sent_folder', id ?? 'none', 86400 * 30);
+    return id;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchZoho(
   db: D1Database,
   s: Settings,
@@ -605,6 +686,31 @@ export async function fetchZoho(
     );
     const json = await safeJson(res);
     if (!res.ok) throw new Error(`Zoho messages failed: ${json.data?.errorCode ?? res.status}`);
+
+    // REPLY EVIDENCE: scan the Sent folder — who did the operator answer, when.
+    // Best-effort: a failure here never blocks the inbox fetch.
+    const myReplies: MyReply[] = [];
+    try {
+      const sentFolder = await zohoSentFolderId(db, s, token, accountId);
+      if (sentFolder) {
+        const sres = await fetch(
+          `https://mail.zoho.${zohoDc(s)}/api/accounts/${accountId}/messages/view?folderId=${sentFolder}&limit=25&sortorder=false`,
+          { headers: { Authorization: `Zoho-oauthtoken ${token}` } },
+        );
+        const sjson = await safeJson(sres);
+        if (sres.ok) {
+          for (const m of sjson.data ?? []) {
+            const ts = m.sentDateInGMT ?? m.receivedTime;
+            const when = ts ? new Date(Number(ts)).toISOString() : '';
+            const subject = clip(strip(String(m.subject ?? '')), 100);
+            for (const raw of String(m.toAddress ?? '').split(',')) {
+              const a = parseAddress(strip(raw));
+              if (a.email) myReplies.push({ source: 'zoho', counterpartyId: a.email, counterparty: a.name, ts: when, subject });
+            }
+          }
+        }
+      }
+    } catch { /* reply evidence is best-effort */ }
     const people = new Map<string, PersonRecord>();
     const items: SourceItem[] = (json.data ?? []).map((m: any) => {
       // Zoho: `sender` is the display name, `fromAddress` the raw address.
@@ -641,7 +747,7 @@ export async function fetchZoho(
         ? `page cap hit (${max}) — older company mail exists beyond this pass`
         : `entire inbox view covered (${items.length} < ${max} cap)`,
     };
-    return { result: { source: 'zoho', ok: true, configured: true, items, coverage }, people: [...people.values()] };
+    return { result: { source: 'zoho', ok: true, configured: true, items, coverage, myReplies }, people: [...people.values()] };
   } catch (e) {
     return { result: { source: 'zoho', ok: false, configured: true, error: (e as Error).message, items: [] }, people: [] };
   }
@@ -774,12 +880,58 @@ export async function fetchGcal(
 // One parallel pass + durable persistence
 // ---------------------------------------------------------------------------
 
+/**
+ * APPLY REPLY EVIDENCE — close the resolution loop.
+ *
+ * For every item, check whether the operator has SENT something to that
+ * person SINCE the item arrived (Gmail sent, Zoho sent, own Pumble DMs —
+ * mail replies match across gmail/zoho by email address). If so:
+ *   - mark `repliedSince` so the UI can show "✓ replied"
+ *   - DOWNGRADE heuristic attention (a handled thread stops screaming
+ *     "needs you") — except starred mail, which is the operator's own
+ *     deliberate flag and only they may clear it.
+ * Anything from that person NEWER than your reply keeps full attention —
+ * they've since come back to you.
+ */
+export function applyReplyEvidence(results: SourceResult[]): void {
+  // counterpartyId -> latest reply epoch. Email keys are shared across
+  // gmail/zoho (replying from either account resolves both inboxes).
+  const latestReply = new Map<string, number>();
+  for (const r of results) {
+    for (const rep of r.myReplies ?? []) {
+      const key = rep.counterpartyId.toLowerCase();
+      const t = Date.parse(rep.ts || '');
+      if (!Number.isFinite(t)) continue;
+      if ((latestReply.get(key) ?? 0) < t) latestReply.set(key, t);
+    }
+  }
+  if (latestReply.size === 0) return;
+
+  for (const r of results) {
+    for (const it of r.items) {
+      if (!it.fromId) continue;
+      const replyTs = latestReply.get(it.fromId.toLowerCase());
+      if (!replyTs) continue;
+      const itemTs = Date.parse(it.ts || '');
+      if (!Number.isFinite(itemTs) || itemTs >= replyTs) continue; // they wrote AFTER your reply — still live
+      it.repliedSince = true;
+      const starred = /starred by you/.test(it.attentionReason ?? '');
+      if (it.needsAttention && !starred) {
+        it.needsAttention = false;
+        it.attentionReason = undefined;
+      }
+    }
+  }
+}
+
 export async function fetchAllSources(
   db: D1Database,
   s: Settings,
 ): Promise<{ results: SourceResult[]; people: PersonRecord[] }> {
   const [p, g, z, c] = await Promise.all([fetchPumble(db, s), fetchGmail(db, s), fetchZoho(db, s), fetchGcal(db, s)]);
-  return { results: [p.result, g.result, z.result, c.result], people: [...p.people, ...g.people, ...z.people, ...c.people] };
+  const results = [p.result, g.result, z.result, c.result];
+  applyReplyEvidence(results); // sent-mail scan resolves already-answered items
+  return { results, people: [...p.people, ...g.people, ...z.people, ...c.people] };
 }
 
 /** Upsert people + items into the durable layer. Batched, cheap. */
@@ -873,7 +1025,14 @@ export function digestForPrompt(results: SourceResult[], maxItems = 80): string 
     lines.push(`## ${r.source.toUpperCase()} — ${r.ok ? `${r.items.length} items (${mine.length} shown, newest/flagged first)${cov}` : `ERROR: ${r.error}`}`);
     for (const item of mine) {
       i++;
-      const flags = [item.isDm ? 'DM' : '', item.mentionsMe ? 'MENTIONS-YOU' : '', item.needsAttention ? `ATTN(${item.attentionReason})` : '']
+      const flags = [
+        item.isDm ? 'DM' : '',
+        item.mentionsMe ? 'MENTIONS-YOU' : '',
+        item.needsAttention ? `ATTN(${item.attentionReason})` : '',
+        // The model must know a thread is already handled — no re-drafting,
+        // no re-prioritising something the operator has answered.
+        item.repliedSince ? 'ALREADY-REPLIED(you responded since — do NOT raise as priority or draft a reply)' : '',
+      ]
         .filter(Boolean)
         .join(' ');
       lines.push(`[${item.source}:${i}] ${item.channel} | from ${item.from}${item.ts ? ` | ${item.ts}` : ''}${flags ? ` | ${flags}` : ''}\n  ${item.title !== item.channel ? `${item.title}: ` : ''}${item.text}`);
