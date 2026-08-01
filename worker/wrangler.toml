@@ -30,4 +30,4 @@ migrations_dir = "migrations"
 
 [vars]
 # Default model; overridable at runtime from Sources → Model picker.
-OPENROUTER_MODEL = "moonshotai/kimi-k3"
+OPENROUTER_MODEL = "poolside/laguna-xs-2.1:free"

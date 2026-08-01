@@ -250,7 +250,8 @@ app.get('/api/models', (c) =>
       { id: 'deepseek/deepseek-r1', name: 'DeepSeek R1', vendor: 'DeepSeek', tier: 'cheap reasoning', price: '~$0.5/$2 per M', note: 'Deliberate reasoning traces, very cheap', reasoning: true },
       { id: 'google/gemini-2.5-flash', name: 'Gemini 2.5 Flash', vendor: 'Google', tier: 'fast + cheap', price: '~$0.15/$0.6 per M', note: 'Fastest triage; fine for briefs', reasoning: false },
       { id: 'qwen/qwen3-235b-a22b', name: 'Qwen3 235B', vendor: 'Alibaba', tier: 'open frontier', price: '~$0.2/$0.6 per M', note: 'Hybrid reasoning modes, strong multilingual', reasoning: true },
-    ],
+            { id: 'poolside/laguna-xs-2.1:free', name: 'Laguna XS 2.1', vendor: 'Poolside', tier: 'cheap reasoning', price: 'FREE', note: 'Laguna XS 2.1 - cost-effective optimized model for reasoning', reasoning: true },
+          ],
   }),
 );
 

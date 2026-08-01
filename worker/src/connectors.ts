@@ -258,8 +258,10 @@ export async function fetchPumble(
   perChannel = 50,
   maxChannels = 10,
   maxDms = 50,
-): Promise<{ result: SourceResult; people: PersonRecord[] }> {
-  const key = s.PUMBLE_API_KEY;
+  perChannelYourMessages = 100,
+    maxYourMessageChannels = 50,
+  ): Promise<{ result: SourceResult; people: PersonRecord[] }> {
+    const key = s.PUMBLE_API_KEY;
   if (!key) return { result: { source: 'pumble', ok: false, configured: false, items: [] }, people: [] };
   try {
     const dir = await pumbleDirectory(db, key);

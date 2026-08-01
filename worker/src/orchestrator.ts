@@ -183,7 +183,7 @@ export async function orchestrate(
   // Allow up to 3 tool-call rounds.
   for (let round = 0; round < 3; round++) {
     const effort = settings.OPENROUTER_REASONING && settings.OPENROUTER_REASONING !== 'off' ? settings.OPENROUTER_REASONING : undefined;
-    const model = settings.OPENROUTER_MODEL || 'moonshotai/kimi-k3';
+    const model = settings.OPENROUTER_MODEL || 'poolside/laguna-xs-2.1:free';
     const completion = await client.chat.completions.create({
       model,
       messages,

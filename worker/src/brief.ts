@@ -6,6 +6,7 @@ import { loadSettings, type Settings } from './settings';
 import { createTask, logAgentRun, logMemory } from './db';
 import { deriveLoops, loopsForPrompt, reconcileTasksFromReplies } from './loops';
 import { docsForPrompt } from './docs';
+import { storeBriefSnapshot, getRecentBriefs, recordBriefDecision } from './contextMemory';
 import { recordUsage, usageFromResponse } from './usage';
 
 /**
@@ -335,7 +336,7 @@ export async function runBrief(env: Env, opts: { force?: boolean } = {}): Promis
   }
 
   // 3) The single LLM call.
-  const model = settings.OPENROUTER_MODEL || 'anthropic/claude-3.5-sonnet';
+  const model = settings.OPENROUTER_MODEL || 'poolside/laguna-xs-2.1:free';
   try {
     const [loopCtx, docCtx] = await Promise.all([loopsForPrompt(db, 8), docsForPrompt(db, 3000)]);
     // EXISTING TASKS in the prompt — the model sees the queue, so it stops
@@ -349,8 +350,26 @@ export async function runBrief(env: Env, opts: { force?: boolean } = {}): Promis
         taskCtx = `EXISTING OPEN TASKS (already queued — do NOT re-propose):\n${openTasks.map((t) => `- ${t.title}`).join('\n')}`;
       }
     } catch { /* non-fatal */ }
+    // RECENT BRIEF CONTEXT — continuity across pulls. Without this, every
+    // brief is a fresh sandbox and completed work (e.g. "cleared TSL booth")
+    // resurfaces as pending. Recent brief headlines are injected so the model
+    // sees what was already handled in the last few passes.
+    let contextHint = '';
+    try {
+      const recent = await getRecentBriefs(db, 3);
+      if (recent.length > 0) {
+        contextHint = [
+          'CONTEXT FROM PREVIOUS BRIEFS (these were already handled / discussed — do not re-raise unless there is genuinely new activity):',
+          ...recent.map((b) =>
+            `- ${new Date(b.created_at).toISOString().slice(0, 10)}: ${String((b.brief as any)?.headline ?? '').slice(0, 120)}`,
+          ),
+        ].join('\n');
+      }
+    } catch { /* table may not exist yet */ }
+
     const userMsg = [
       `Today: ${new Date().toUTCString()}`,
+      contextHint,
       docCtx,
       loopCtx,
       taskCtx,
@@ -378,6 +397,15 @@ export async function runBrief(env: Env, opts: { force?: boolean } = {}): Promis
 
     await persistBrief(db, brief);
     await writeCache(db, brief);
+    // CONTEXT MEMORY: store this brief's gist so the NEXT pull knows what was
+    // already handled — closes the "every pull is a new sandbox" gap.
+    try {
+      await storeBriefSnapshot(db, {
+        headline: brief.headline,
+        summary: brief.summary,
+        priorities: brief.priorities.map((p) => ({ title: p.title, source_ref: p.source_ref })),
+      });
+    } catch { /* migration may still be rolling out */ }
     // TIMEBLOCK: auto-save this state so pulling new context never destroys
     // the summary the operator may still be exploring. Non-fatal by design.
     try { await saveSnapshot(db, brief); } catch { /* table may predate migration */ }

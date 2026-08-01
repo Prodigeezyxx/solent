@@ -24,7 +24,7 @@
     }
   ],
   "vars": {
-    "OPENROUTER_MODEL": "moonshotai/kimi-k3"
+    "OPENROUTER_MODEL": "poolside/laguna-xs-2.1:free"
   },
 
   // ---- Self-hosting on YOUR OWN Cloudflare account -------------------------
@@ -51,12 +51,12 @@
         {
           "binding": "DB",
           "database_name": "solent-db",
-          "database_id": "REPLACE_WITH_YOUR_OWN_D1_ID",
+          "database_id": "8f496104-2daf-4b3e-b909-8faf62e9cda0",
           "migrations_dir": "worker/migrations"
         }
       ],
       "vars": {
-        "OPENROUTER_MODEL": "moonshotai/kimi-k3"
+        "OPENROUTER_MODEL": "poolside/laguna-xs-2.1:free"
       }
     }
   }
