@@ -109,12 +109,14 @@ function briefSystem(s: Settings): string {
     `You are CONDUCTOR, the executive function layer for ${name}.` +
     (ctx ? ` Operator context: ${ctx}.` : '') +
     ' You receive a raw digest of their real work signals (Pumble team chat, Gmail personal inbox, Zoho company inbox, Google Calendar schedule). ' +
-    'GCAL items are upcoming events — weave them into the day’s shape: flag conflicts with priorities, prep needed before meetings, and RSVPs awaiting a response. ' +
+    'GCAL items are upcoming events — weave them into the day\'s shape: flag conflicts with priorities, prep needed before meetings, and RSVPs awaiting a response. ' +
     'Items flagged DM, MENTIONS-YOU, or ATTN(...) were pre-screened as likely needing the operator — weigh them heavily. ' +
     'Items flagged ALREADY-REPLIED were ANSWERED by the operator since arriving — never make them priorities, never draft replies to them; mention only if the thread needs a follow-up beyond the sent reply. ' +
     'An EXISTING OPEN TASKS block lists what is already on the queue — do NOT re-propose those as priorities (even reworded); only genuinely NEW actionable items become priorities. ' +
     'If an OPERATOR CONTEXT LIBRARY block is present, treat it as ground truth about the business. ' +
     'If OPEN LOOPS are present, oldest unresolved commitments deserve priority — nag about anything > 2 days old. ' +
+    // NEW: RESOLVED ITEMS instruction
+    'Items in RESOLVED ITEMS block are COMPLETE — do NOT re-propose them as priorities. ' +
     'In ONE pass, produce their executive brief as strict JSON. Rules: be ruthless about priority — only genuinely actionable items ' +
     'become priorities (up to 10 when the inbox genuinely warrants it). Ignore newsletters, notifications, and noise. Suggested replies for ' +
     `every message that clearly awaits ${name} (up to 5, ≤80 words each, their voice: warm, precise, outcome-driven). ` +
@@ -209,6 +211,11 @@ async function callModel(apiKey: string, model: string, system: string, user: st
     throw e;
   }
 }
+
+/**
+ * Pattern matching for resolution detection in brief headlines
+ */
+const RESOLVED_PATTERNS = [/cleared/i, /handled/i, /resolved/i, /sent/i, /replied/i, /completed/i, /finished/i, /done/i];
 
 /**
  * ZERO-LLM SOURCE REFRESH (stale-while-revalidate).
@@ -350,20 +357,47 @@ export async function runBrief(env: Env, opts: { force?: boolean } = {}): Promis
         taskCtx = `EXISTING OPEN TASKS (already queued — do NOT re-propose):\n${openTasks.map((t) => `- ${t.title}`).join('\n')}`;
       }
     } catch { /* non-fatal */ }
+
     // RECENT BRIEF CONTEXT — continuity across pulls. Without this, every
     // brief is a fresh sandbox and completed work (e.g. "cleared TSL booth")
     // resurfaces as pending. Recent brief headlines are injected so the model
     // sees what was already handled in the last few passes.
+    // RESOLVED ITEMS: detect resolution patterns in headlines
     let contextHint = '';
     try {
       const recent = await getRecentBriefs(db, 3);
       if (recent.length > 0) {
-        contextHint = [
-          'CONTEXT FROM PREVIOUS BRIEFS (these were already handled / discussed — do not re-raise unless there is genuinely new activity):',
-          ...recent.map((b) =>
-            `- ${new Date(b.created_at).toISOString().slice(0, 10)}: ${String((b.brief as any)?.headline ?? '').slice(0, 120)}`,
-          ),
-        ].join('\n');
+        // Extract items that indicate work is DONE
+        const resolvedItems: string[] = [];
+        const discussedItems: string[] = [];
+        
+        for (const b of recent) {
+          const headline = String((b.brief as any)?.headline ?? '');
+          const isResolved = RESOLVED_PATTERNS.some(p => p.test(headline));
+          const entry = `- ${new Date(b.created_at).toISOString().slice(0, 10)}: ${headline.slice(0, 120)}`;
+          
+          if (isResolved) {
+            resolvedItems.push(entry);
+          } else {
+            discussedItems.push(entry);
+          }
+        }
+        
+        const parts: string[] = [];
+        if (resolvedItems.length) {
+          parts.push(
+            'RESOLVED ITEMS (these are COMPLETE - do NOT re-propose as priorities):',
+            ...resolvedItems,
+            '',
+          );
+        }
+        if (discussedItems.length) {
+          parts.push(
+            'PREVIOUSLY DISCUSSED (for reference only):',
+            ...discussedItems,
+          );
+        }
+        contextHint = parts.join('\n');
       }
     } catch { /* table may not exist yet */ }
 
@@ -452,7 +486,7 @@ function sameTask(a: Set<string>, b: Set<string>): boolean {
 }
 
 function priorityOrigin(sourceRef: string, inbox: SourceItem[]) {
-  const match = sourceRef.trim().match(/^\[?(pumble|gmail|zoho):([^\]]+)\]?$/i);
+  const match = sourceRef.trim().match(/^\[?([a-z]+):([^\]]+)\]?$/i);
   if (!match) return undefined;
   const source = match[1].toLowerCase();
   const ref = match[2];
@@ -472,7 +506,7 @@ async function persistBrief(db: D1Database, brief: Brief): Promise<void> {
   for (const p of brief.priorities) {
     const origin = priorityOrigin(p.source_ref, brief.inbox);
     // Defense in depth: even if the model ignores ALREADY-REPLIED, never
-    // create a task for a message the sent scan proved was already handled.
+    // create a task for a message a sent scan proved was already handled.
     if (origin?.repliedSince) continue;
     const tokens = taskTokens(p.title);
     if (existing.some((e) => sameTask(e, tokens))) continue;
