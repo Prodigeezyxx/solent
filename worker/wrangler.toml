@@ -1,13 +1,26 @@
-name = "nexus-worker"
+name = "solent-worker"
 main = "src/index.ts"
 compatibility_date = "2024-11-06"
 compatibility_flags = ["nodejs_compat"]
 
-# D1 database binding (created via: wrangler d1 create nexus-db)
+# Serve the built React app from the same Worker — one process, one deploy.
+[assets]
+directory = "../dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+
+# Morning auto-brief cron is disabled for the managed hosted deploy —
+# Workers-for-Platforms user workers don't support cron triggers.
+# (Self-hosting on your own CF account? Re-enable:)
+# [triggers]
+# crons = ["30 6 * * 1-5"]
+
+# D1 database binding — managed database provisioned by the hosted deploy.
+# (Local dev uses miniflare local state; the name/id only matter for deploys.)
 [[d1_databases]]
 binding = "DB"
-database_name = "nexus-db"
-database_id = "REPLACE_WITH_YOUR_D1_ID"
+database_name = "43b829ba-c819-41c0-947c-aaa05f671d04-db"
+database_id = "bbf99890-8c97-416a-8685-1621cdddbf34"
 migrations_dir = "migrations"
 
 # Secrets (set via: wrangler secret put OPENROUTER_API_KEY)
@@ -16,4 +29,5 @@ migrations_dir = "migrations"
 # APP_URL             - optional, your deployment URL
 
 [vars]
-OPENROUTER_MODEL = "nvidia/nemotron-3-ultra-550b-a55b:free"
+# Default model; overridable at runtime from Sources → Model picker.
+OPENROUTER_MODEL = "poolside/laguna-xs-2.1:free"

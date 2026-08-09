@@ -4,6 +4,7 @@ node_modules/
 # Build output
 dist/
 coverage/
+worker/.test-build/
 
 # Local environment and secrets
 .env
@@ -38,3 +39,9 @@ pids/
 worker/.dev.vars
 worker/.wrangler/
 worker/dev.vars
+
+# local D1 backups (contain secrets)
+worker/.d1_backup_*.sql
+
+# portable DB exports (contain credentials — move privately, never via git)
+solent_db_export_*.sql

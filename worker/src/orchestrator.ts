@@ -3,6 +3,11 @@ import type { D1Database } from '@cloudflare/workers-types';
 import type { ChatMessage, Env, ToolCallResult } from './types';
 import { agentListForPrompt, agentSystemPrompt } from './agents';
 import { createTask, logAgentRun, logDecision, logMemory, toggleTask, listTasks } from './db';
+import { loadSettings } from './settings';
+import { setLoopStatus } from './loops';
+import { docsForPrompt, saveDoc } from './docs';
+import { recordUsage, usageFromResponse } from './usage';
+import { AGENTS } from './agents';
 
 const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   {
@@ -14,7 +19,7 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
         type: 'object',
         properties: {
           title: { type: 'string', description: 'The task title' },
-          context: { type: 'string', description: 'Where this came from, e.g. "realmspace · ORACLE"' },
+          context: { type: 'string', description: 'Where this came from, e.g. "gmail · HERMES" or a project name' },
           agent: { type: 'string', description: 'Agent responsible, usually ATLAS' },
         },
         required: ['title', 'agent'],
@@ -46,9 +51,41 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
         properties: {
           content: { type: 'string', description: 'The distilled insight' },
           agent: { type: 'string', description: 'Owning agent, usually SCRIBE' },
-          source: { type: 'string', description: 'Optional source, e.g. "Placer.ai call"' },
+          source: { type: 'string', description: 'Optional source, e.g. "client call" or "pumble #general"' },
         },
         required: ['content', 'agent'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'resolve_loop',
+      description: 'Close an open loop (a commitment in flight) by id when the operator says it is handled, answered, or no longer relevant.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: { type: 'number', description: 'Loop id from the OPEN LOOPS context' },
+          outcome: { type: 'string', enum: ['resolved', 'dismissed'], description: 'resolved = handled; dismissed = no longer relevant' },
+          agent: { type: 'string', description: 'Agent performing this, usually ATLAS' },
+        },
+        required: ['id', 'outcome', 'agent'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'save_context_doc',
+      description: 'Save a document, note, or context the operator shares into the permanent context library. Future briefs and chats will use it as ground truth.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Short descriptive title' },
+          content: { type: 'string', description: 'The full content to store' },
+          agent: { type: 'string', description: 'Owning agent, usually SCRIBE' },
+        },
+        required: ['title', 'content', 'agent'],
       },
     },
   },
@@ -70,16 +107,39 @@ const TOOLS: OpenAI.Chat.Completions.ChatCompletionTool[] = [
   },
 ];
 
-function buildSystem(): string {
+function buildSystem(liveContext: string, loopCtx: string, docCtx: string, operatorName?: string, operatorContext?: string, agentId?: string): string {
+  const who = operatorName?.trim() || 'the operator';
+  const specialist = agentId && agentId !== 'CONDUCTOR' ? AGENTS.find((a) => a.id === agentId) : undefined;
+  const identity = specialist
+    ? `${specialist.system} You are part of SOLENT, an AI-native personal command centre for ${who}, and you have full access to the council's shared tools — use them to persist real work (tasks, memories, decisions, loops, docs). Stay strictly in your ${specialist.role} lane; if the ask belongs to another specialist, say so and hand off. `
+    : `You are CONDUCTOR, the orchestrator of SOLENT, an AI-native personal command centre for ${who}. `;
   return (
-    'You are CONDUCTOR, the orchestrator of NEXUS, an AI-native personal command centre for Iyobosa. ' +
+    identity +
+    (operatorContext?.trim() ? `Operator context: ${operatorContext.trim()}. ` : '') +
     'You have a council of specialist agents you can dispatch by calling tools. Choose the right agent for each job.\n\n' +
     'Available agents:\n' +
     agentListForPrompt() +
-    '\n\nWhen you call a tool, the named agent performs it and it is logged. After tool calls, give Iyobosa a short, ' +
+    (docCtx ? `\n\n${docCtx}` : '') +
+    (loopCtx ? `\n\n${loopCtx}\n(Each loop line is prefixed by its id like "#12". Use resolve_loop when one is handled.)` : '') +
+    (liveContext ? `\n\nLive context from the last one-shot brief (Pumble + Gmail + Zoho):\n${liveContext}` : '') +
+    '\n\nWhen the operator pastes a document, memo, or background information worth keeping, call save_context_doc so it becomes durable ground truth. ' +
+    'When you call a tool, the named agent performs it and it is logged. After tool calls, give the operator a short, ' +
     'human summary of what the council did and the single most important next step. Never expose raw tool JSON. ' +
     'Keep replies under 120 words unless asked to expand.'
   );
+}
+
+/** Zero-credit context injection: reads the cached brief from D1 (never triggers a model call). */
+async function cachedBriefContext(db: D1Database): Promise<string> {
+  try {
+    const row = await db.prepare("SELECT value FROM settings WHERE key = '_brief_cache'").first<{ value: string }>();
+    if (!row) return '';
+    const b = JSON.parse(row.value) as { headline?: string; summary?: string; priorities?: { title: string; urgency: string }[] };
+    const pr = (b.priorities ?? []).map((p) => `- [${p.urgency}] ${p.title}`).join('\n');
+    return [b.headline ? `Headline: ${b.headline}` : '', b.summary ?? '', pr].filter(Boolean).join('\n').slice(0, 900);
+  } catch {
+    return '';
+  }
 }
 
 export interface OrchestrationResult {
@@ -90,19 +150,27 @@ export interface OrchestrationResult {
 export async function orchestrate(
   env: Env,
   history: ChatMessage[],
+  agentId?: string,
 ): Promise<OrchestrationResult> {
+  const settings = await loadSettings(env.DB, env);
+
   // No key configured: deterministic stub so the UI works end-to-end without a real LLM.
-  if (!env.OPENROUTER_API_KEY) {
+  if (!settings.OPENROUTER_API_KEY) {
     return stubOrchestrate(history, env.DB);
   }
 
   const client = new OpenAI({
-    apiKey: env.OPENROUTER_API_KEY,
+    apiKey: settings.OPENROUTER_API_KEY,
     baseURL: 'https://openrouter.ai/api/v1',
   });
 
+  const [liveContext, loopCtx, docCtx] = await Promise.all([
+    cachedBriefContext(env.DB),
+    loopsForPromptWithIds(env.DB),
+    docsForPrompt(env.DB, 2500),
+  ]);
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: 'system', content: buildSystem() },
+    { role: 'system', content: buildSystem(liveContext, loopCtx, docCtx, settings.OPERATOR_NAME, settings.OPERATOR_CONTEXT, agentId) },
     ...history.map((m) => ({
       role: m.role === 'agent' ? ('assistant' as const) : (m.role as 'user' | 'assistant' | 'system'),
       content: m.agent ? `[${m.agent}] ${m.content}` : m.content,
@@ -114,14 +182,20 @@ export async function orchestrate(
 
   // Allow up to 3 tool-call rounds.
   for (let round = 0; round < 3; round++) {
+    const effort = settings.OPENROUTER_REASONING && settings.OPENROUTER_REASONING !== 'off' ? settings.OPENROUTER_REASONING : undefined;
+    const model = settings.OPENROUTER_MODEL || 'poolside/laguna-xs-2.1:free';
     const completion = await client.chat.completions.create({
-      model: env.OPENROUTER_MODEL || 'anthropic/claude-3.5-sonnet',
+      model,
       messages,
       tools: TOOLS,
       tool_choice: 'auto',
       temperature: 0.4,
       stream: false,
-    });
+      // OpenRouter extensions: exact cost accounting + reasoning effort
+      ...({ usage: { include: true } } as Record<string, unknown>),
+      ...(effort ? ({ reasoning: { effort } } as Record<string, unknown>) : {}),
+    } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming);
+    await recordUsage(env.DB, usageFromResponse(completion, model, agentId && agentId !== 'CONDUCTOR' ? `agent:${agentId}` : 'chat'));
 
     const choice = completion.choices[0];
     const msg = choice.message;
@@ -148,6 +222,26 @@ export async function orchestrate(
   return { reply: reply || 'The council is processing. Try again in a moment.', toolResults };
 }
 
+/** Loop context with ids so the model can call resolve_loop precisely. */
+async function loopsForPromptWithIds(db: D1Database): Promise<string> {
+  try {
+    const { results } = await db
+      .prepare("SELECT id, direction, counterparty, ask, opened_ts, created_at FROM loops WHERE status = 'open' ORDER BY COALESCE(opened_ts,'') ASC LIMIT 10")
+      .all<{ id: number; direction: string; counterparty: string; ask: string; opened_ts: string | null; created_at: number }>();
+    if (!results?.length) return '';
+    const now = Date.now();
+    const lines = results.map((l) => {
+      const opened = l.opened_ts ? new Date(l.opened_ts).getTime() : l.created_at;
+      const days = Math.max(0, Math.floor((now - opened) / 86_400_000));
+      const age = days === 0 ? 'today' : `${days}d`;
+      return `#${l.id} ${l.direction === 'inbound' ? 'OWE' : 'WAITING on'} ${l.counterparty} (${age}): "${l.ask.slice(0, 90)}"`;
+    });
+    return `OPEN LOOPS:\n${lines.join('\n')}`;
+  } catch {
+    return '';
+  }
+}
+
 async function runTool(db: D1Database, name: string, args: any): Promise<ToolCallResult> {
   const agent = typeof args.agent === 'string' ? args.agent : 'CONDUCTOR';
   switch (name) {
@@ -165,6 +259,17 @@ async function runTool(db: D1Database, name: string, args: any): Promise<ToolCal
       await logMemory(db, String(args.content), agent, args.source ? String(args.source) : undefined);
       await logAgentRun(db, agent, 'log_memory', String(args.content).slice(0, 60));
       return { agent, action: 'Logged memory', detail: String(args.content).slice(0, 60) };
+    }
+    case 'resolve_loop': {
+      const outcome = args.outcome === 'dismissed' ? 'dismissed' : 'resolved';
+      await setLoopStatus(db, Number(args.id), outcome);
+      await logAgentRun(db, agent, 'resolve_loop', `#${args.id} ${outcome}`);
+      return { agent, action: outcome === 'resolved' ? 'Closed loop' : 'Dismissed loop', detail: `loop #${args.id}` };
+    }
+    case 'save_context_doc': {
+      const id = await saveDoc(db, String(args.title), String(args.content));
+      await logAgentRun(db, agent, 'save_context_doc', String(args.title));
+      return { agent, action: 'Saved context doc', detail: `“${String(args.title)}” (#${id})` };
     }
     case 'log_decision': {
       await logDecision(db, String(args.title), String(args.rationale), agent);

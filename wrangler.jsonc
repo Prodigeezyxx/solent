@@ -1,0 +1,63 @@
+{
+  // SOLENT Command Centre — root config for the managed hosted deploy pipeline.
+  // Local dev keeps using worker/wrangler.toml (cd worker && wrangler dev).
+  "name": "solent-worker",
+  "main": "worker/src/index.ts",
+  "compatibility_date": "2024-11-06",
+  "compatibility_flags": ["nodejs_compat"],
+  // CI (Cloudflare Workers Builds) clones the repo fresh — build the React
+  // app before wrangler bundles/deploys, so dist/ exists.
+  "build": {
+    "command": "npm run build"
+  },
+  "assets": {
+    "directory": "dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "43b829ba-c819-41c0-947c-aaa05f671d04-db",
+      "database_id": "bbf99890-8c97-416a-8685-1621cdddbf34",
+      "migrations_dir": "worker/migrations"
+    }
+  ],
+  "vars": {
+    "OPENROUTER_MODEL": "poolside/laguna-xs-2.1:free"
+  },
+
+  // ---- Self-hosting on YOUR OWN Cloudflare account -------------------------
+  // The default (top-level) config targets the Genspark-managed deployment.
+  // To deploy to your own account (e.g. via Cloudflare Workers Builds CI):
+  //   1. Once: npx wrangler d1 create solent-db   → copy the database_id below
+  //   2. Once: npx wrangler d1 migrations apply solent-db --remote --env selfhost
+  //   3. Import your data: npx wrangler d1 execute solent-db --remote --file=solent_db_export_YYYY-MM-DD.sql --env selfhost
+  //   4. Set the CI deploy command to: npx wrangler deploy --env selfhost
+  "env": {
+    "selfhost": {
+      "name": "solent-worker",
+      "assets": {
+        "directory": "dist",
+        "binding": "ASSETS",
+        "not_found_handling": "single-page-application"
+      },
+      // Cron works on your own account (unsupported on the managed platform):
+      // morning auto-brief at 06:30 UTC weekdays.
+      "triggers": {
+        "crons": ["30 6 * * 1-5"]
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "solent-db",
+          "database_id": "8f496104-2daf-4b3e-b909-8faf62e9cda0",
+          "migrations_dir": "worker/migrations"
+        }
+      ],
+      "vars": {
+        "OPENROUTER_MODEL": "poolside/laguna-xs-2.1:free"
+      }
+    }
+  }
+}

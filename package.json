@@ -1,5 +1,5 @@
 {
-  "name": "nexus-command-centre",
+  "name": "solent-command-centre",
   "private": true,
   "version": "1.0.0",
   "type": "module",
@@ -8,15 +8,23 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test:worker": "mkdir -p worker/.test-build && ./worker/node_modules/.bin/esbuild worker/tests/connectors.test.ts --bundle --platform=node --format=esm --outfile=worker/.test-build/connectors.test.mjs && node --test worker/.test-build/connectors.test.mjs; code=$?; rm -rf worker/.test-build; exit $code",
+    "setup": "npm install && cd worker && npm install && npx wrangler d1 migrations apply solent-db --local",
+    "start": "npm run build && cd worker && npx wrangler dev --port 3000",
+    "db:export": "./scripts/db-export.sh",
+    "db:import": "./scripts/db-import.sh"
   },
   "dependencies": {
+    "hono": "^4.6.0",
+    "openai": "^4.73.0",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
     "react": "^19.0.1",
     "react-dom": "^19.0.1"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241106.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.1.1",
     "@types/react": "^19.0.0",
